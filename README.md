@@ -28,6 +28,11 @@ Transactions you can check:
   `ReportApplied` in the receipt).
 - Ordinary swaps: [USDC to AAPL](https://explorer.testnet.arc.io/tx/0xe0fd0dc2c61e5a7f8693a38c8f4dc35b49e26ac39ea63bd9c4e77dc50e4c385a) paid the 0.30% posted fee; [AAPL to MSFT](https://explorer.testnet.arc.io/tx/0xb79be01b1f3f6cb95b64485097b0e95d2195e9d6ed7ed3fce1c779bb44bba20c) is one hop through the same reserve.
 
+- Rebalance: testnet has no arbitrage bots, so `scripts/rebalance.mjs` trades each pool back to Chainlink's price
+  (each correction paid the gap fee to the fund) and then added 8 USDC with matching slices
+  ([join](https://explorer.testnet.arc.io/tx/0x1b50400ba44c68a89a07c8b73b3ff293115633a941b307133353fa827614d44f)).
+  The fund is now about $48.
+
 The amounts are small because the Arc faucet gives 20 USDC every two hours. The maths is the same at any size:
 on a $1M fund, a 5% Monday gap in Nvidia is worth about $228 to bots, and the hook keeps about $182 of it.
 
