@@ -1,0 +1,17 @@
+{
+  "name": "market-clock-workflow",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.23.0",
+    "viem": "^2.54.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

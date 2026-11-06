@@ -1,0 +1,8 @@
+{
+  "schedule": "0 */5 * * * *",
+  "quoteUrl": "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1m&range=1d",
+  "symbols": ["NVDA", "AAPL", "MSFT"],
+  "chainName": "arc-testnet",
+  "marketClock": "0x11e65932196B07617180A8Fc5D1885BFd1170e9F",
+  "gasLimit": "500000"
+}

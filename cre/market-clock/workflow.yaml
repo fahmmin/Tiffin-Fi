@@ -1,0 +1,16 @@
+# CRE workflow settings. Targets must match the ones in ../project.yaml.
+staging-settings:
+  user-workflow:
+    workflow-name: "market-clock-staging"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.json"
+    secrets-path: ""
+
+production-settings:
+  user-workflow:
+    workflow-name: "market-clock-production"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.json"
+    secrets-path: ""
