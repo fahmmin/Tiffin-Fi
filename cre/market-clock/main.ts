@@ -69,7 +69,9 @@ type YahooChart = { chart?: { result?: { meta?: { regularMarketPrice?: unknown }
 
 /** Runs on every node; the DON agrees on the median. Returns USD x 1e18. */
 const fetchPrice = (requester: HTTPSendRequester, url: string): bigint => {
-	const res = requester.sendRequest({ url, multiHeaders: { 'User-Agent': { values: [USER_AGENT] } } }).result()
+	const res = requester
+		.sendRequest({ url, method: 'GET', multiHeaders: { 'User-Agent': { values: [USER_AGENT] } } })
+		.result()
 	if (!ok(res)) throw new Error(`HTTP ${res.statusCode} from ${url}`)
 	const price = (json(res) as YahooChart).chart?.result?.[0]?.meta?.regularMarketPrice
 	if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) throw new Error(`no price in ${url}`)
