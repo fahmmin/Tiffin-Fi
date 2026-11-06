@@ -137,6 +137,7 @@ async function rebalance() {
     const hash = await wallet.writeContract({ address, abi, functionName, args })
     const receipt = await publicClient.waitForTransactionReceipt({ hash })
     if (receipt.status !== 'success') throw new Error(`${functionName} reverted: ${explorerTx(hash)}`)
+    await new Promise((r) => setTimeout(r, 3_000)) // stay under the public RPC's rate limit
     return hash
   }
   const poolAbi = parseAbi([

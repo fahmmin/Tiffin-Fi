@@ -48,6 +48,13 @@ with $2 each of the three stocks and USDC ($8, share price $1.00), and routed
 [a 0.1 USDC swap](https://explorer.testnet.arc.io/tx/0x4d745b906e9e24a809a344cd86aec9fe22ff3181c681ebc88cfbe1a0231ef620)
 through Studio's router.
 
+The Chainlink CRE workflow in [`cre/`](cre/) reports to Studio's MarketClock. A `cre workflow simulate --broadcast`
+run fetched live quotes, reached consensus and
+[wrote the report](https://explorer.testnet.arc.io/tx/0x11efa416c2514360c666bf0ff0641bf21ec07e5be9cf2a3f3a30cf0277a898bd)
+through the CRE forwarder. Testnet has no arbitrage bots, so `scripts/studio.mjs rebalance` trades each pool back to
+the clock's price. `scripts/push-prices.mjs --studio --every 60` is the owner fallback that keeps prices fresh
+between CRE runs.
+
 **How we got here.** We first prototyped Tiffin Fi with Claude Code. That prototype is the root of this repo
 (`src/`, `app/`, and the deployment below). Arc requires Arc Studio as the starting point, so we rebuilt the Arc
 track version from scratch in a fresh Studio project. An earlier Studio app where we only imported and audited the

@@ -1,9 +1,16 @@
 // Owner fallback for the Chainlink CRE workflow: fetch NVDA, AAPL and MSFT prices, work out NYSE hours and push the
 // same report to MarketClock.  node scripts/push-prices.mjs            one report
 //                              node scripts/push-prices.mjs --every 5  one report every 5 minutes
-import { encodeAbiParameters, formatUnits } from 'viem'
+//                              add --studio to push to Arc Studio's MarketClock instead of the prototype's
+import { readFileSync } from 'node:fs'
+import { encodeAbiParameters, formatUnits, parseAbi } from 'viem'
 import { clockAbi, deployment as d, explorerTx, publicClient, walletClient } from './arc.mjs'
 import { nyseOpen } from './nyse.mjs'
+
+const studio = JSON.parse(readFileSync(new URL('../deployments/arc-testnet-studio.json', import.meta.url), 'utf8'))
+const target = process.argv.includes('--studio')
+  ? { address: studio.clock, abi: parseAbi(['function pushReport(bytes report)']), functionName: 'pushReport' }
+  : { address: d.clock, abi: clockAbi, functionName: 'push' }
 
 async function price(symbol) {
   const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m&range=1d`, {
@@ -18,8 +25,9 @@ async function pushOnce(wallet) {
   const prices = [await price('NVDA'), await price('AAPL'), await price('MSFT')]
   const open = nyseOpen()
   const report = encodeAbiParameters([{ type: 'uint256[]' }, { type: 'bool' }], [prices, open])
-  const hash = await wallet.writeContract({ address: d.clock, abi: clockAbi, functionName: 'push', args: [report] })
-  await publicClient.waitForTransactionReceipt({ hash })
+  const hash = await wallet.writeContract({ ...target, args: [report] })
+  const receipt = await publicClient.waitForTransactionReceipt({ hash })
+  if (receipt.status !== 'success') throw new Error(`push reverted: ${explorerTx(hash)}`)
   const shown = prices.map((p) => `$${Number(formatUnits(p, 18)).toFixed(2)}`).join(' / ')
   console.log(`${new Date().toISOString()} NVDA/AAPL/MSFT ${shown}, market ${open ? 'open' : 'closed'}: ${explorerTx(hash)}`)
 }
@@ -28,6 +36,6 @@ const every = process.argv.indexOf('--every')
 const wallet = walletClient()
 await pushOnce(wallet)
 if (every > 0) {
-  const minutes = Number(process.argv[every + 1] ?? '5')
+  const minutes = Number(process.argv[every + 1]) || 5
   setInterval(() => pushOnce(wallet).catch((e) => console.error(e.shortMessage ?? e.message)), minutes * 60_000)
 }
