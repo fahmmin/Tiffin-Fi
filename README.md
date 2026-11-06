@@ -5,7 +5,7 @@ Uniswap v4 hook on Arc. The hook prices every swap with Balancer's weighted math
 and a Chainlink CRE workflow tells it Wall Street's price and hours, so Monday's opening gap pays the fund
 instead of the first bot.
 
-Built at ETHGlobal Mumbai 2026.
+Built at ETHGlobal Mumbai 2026. **Live app: [tiffinfi.vercel.app](https://tiffinfi.vercel.app)**
 
 ## Live on Arc testnet
 
