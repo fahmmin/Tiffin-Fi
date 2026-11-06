@@ -53,7 +53,7 @@ export function App() {
       <aside className="side">
         <a className="side-logo" href="#">
           <Mark />
-          <span>ETF That Pays You</span>
+          <span>Tiffin Fi</span>
         </a>
         <p className="side-tagline">A stock basket that gets paid to rebalance</p>
         <nav className="side-nav" aria-label="App">
@@ -75,7 +75,7 @@ export function App() {
       <div className="main">
         <header className="topbar">
           <div className="topbar-title">
-            <p className="eyebrow">ETF That Pays You</p>
+            <p className="eyebrow">Tiffin Fi</p>
             <h1 id="page-title" tabIndex={-1}>
               {page.title}
             </h1>

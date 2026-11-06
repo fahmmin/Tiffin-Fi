@@ -1,4 +1,6 @@
-# The ETF That Pays You
+# Tiffin Fi
+
+The ETF that pays you.
 
 A stock fund that gets paid to rebalance. Nvidia, Apple, Microsoft and USDC in one token, run by one
 Uniswap v4 hook on Arc. The hook prices every swap with Balancer's weighted maths over one shared reserve,
