@@ -11,10 +11,10 @@ const done = (page: Page, text: string) => expect(page.getByRole('status').filte
 async function openTrade(page: Page) {
   await page.goto('/#trade')
   const form = page.getByRole('tabpanel')
-  await form.getByRole('button', { name: 'Connect wallet' }).click()
+  await form.getByRole('button', { name: 'Connect a wallet' }).click()
   // The wallet starts on Ethereum without Arc: the app adds Arc and switches.
-  await expect(form.getByRole('button', { name: 'Connect wallet' })).toHaveCount(0)
-  await expect(form.getByRole('button', { name: 'Switch to Arc testnet' })).toHaveCount(0)
+  await expect(form.getByRole('button', { name: 'Connect a wallet' })).toHaveCount(0)
+  await expect(form.getByRole('button', { name: 'Switch network to Arc testnet' })).toHaveCount(0)
 }
 
 async function tab(page: Page, name: 'Buy' | 'Sell' | 'Swap') {
@@ -82,7 +82,7 @@ test('studio app: asks to switch back when the wallet leaves Arc', async ({ page
   await openTrade(page)
   await wallet.moveTo(1)
   const form = page.getByRole('tabpanel')
-  await expect(form.getByRole('button', { name: 'Switch to Arc testnet' })).toBeVisible()
-  await form.getByRole('button', { name: 'Switch to Arc testnet' }).click()
-  await expect(form.getByRole('button', { name: 'Switch to Arc testnet' })).toHaveCount(0)
+  await expect(form.getByRole('button', { name: 'Switch network to Arc testnet' })).toBeVisible()
+  await form.getByRole('button', { name: 'Switch network to Arc testnet' }).click()
+  await expect(form.getByRole('button', { name: 'Switch network to Arc testnet' })).toHaveCount(0)
 })
