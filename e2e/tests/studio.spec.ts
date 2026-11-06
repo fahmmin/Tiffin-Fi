@@ -66,11 +66,15 @@ test('studio app: swaps USDC for a stock and back', async ({ page }) => {
   await page.getByRole('combobox', { name: 'Token you receive' }).selectOption({ label: 'tNVDA' })
   await page.locator('#amt-you-pay').fill('0.03')
   const approve = page.getByRole('button', { name: 'Approve USDC' })
+  const go = page.getByRole('button', { name: 'Swap USDC for tNVDA' })
+  // Wait for the allowance read to decide which step the form shows.
+  await expect(approve.or(go)).toBeEnabled()
   if (await approve.isVisible()) {
     await approve.click()
     await done(page, 'USDC approved. Now swap.')
   }
-  await page.getByRole('button', { name: 'Swap USDC for tNVDA' }).click()
+  await expect(go).toBeEnabled()
+  await go.click()
   await done(page, 'Swapped. Confirmed on Arc testnet')
 })
 
