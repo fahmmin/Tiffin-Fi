@@ -56,7 +56,7 @@ export function SwapPanel({ fund, wallet, refresh }: Props) {
           ? `You have ${amount(balance, a.decimals)} ${a.symbol}.`
           : undefined
   const valid = !!amountIn && !problem
-  const quote = useDebounced(valid ? () => readQuote(from, to, amountIn) : undefined, [valid, from, to, amountIn, fund?.readAt])
+  const quote = useDebounced(valid ? () => readQuote(from, to, amountIn) : undefined, [valid, from, to, amountIn], fund?.readAt)
   const q = quote.value
   const approved = valid && !!user && user.routerAllowances[from] >= amountIn
 
@@ -155,7 +155,7 @@ export function SwapPanel({ fund, wallet, refresh }: Props) {
       <ActionButton
         wallet={wallet}
         busy={tx.busy}
-        disabled={!valid || !q || q.amountOut === 0n || quote.loading}
+        disabled={!valid || !q || q.amountOut === 0n}
         label={!valid ? 'Enter an amount' : approved ? `Swap ${a.symbol} for ${b.symbol}` : `Allow ${amount(amountIn, a.decimals)} ${a.symbol}`}
         onClick={submit}
       />

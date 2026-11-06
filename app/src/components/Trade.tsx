@@ -113,7 +113,8 @@ function Buy({ fund, wallet, refresh }: Props) {
             .simulateContract({ address: HOOK, abi: hookAbi, functionName: 'joinSingle', args: [USDC, usdcIn, 0n], account: user.address })
             .then((r) => r.result)
       : undefined,
-    [approved, usdcIn, user?.address, fund?.readAt],
+    [approved, usdcIn, user?.address],
+    fund?.readAt,
   )
   const shares = approved ? sim.value : valid ? estimateBuyShares(fund, usdcIn) : undefined
   const worth = shares !== undefined && fund ? (shares * fund.sharePriceUsd) / E18 : undefined
@@ -190,7 +191,7 @@ function Buy({ fund, wallet, refresh }: Props) {
       <ActionButton
         wallet={wallet}
         busy={tx.busy}
-        disabled={!valid || (approved && !sim.value) || sim.loading}
+        disabled={!valid || (approved && !sim.value)}
         label={!valid ? 'Enter an amount' : approved ? `Buy BSKT for ${amount(usdcIn, 6)} USDC` : `Allow ${amount(usdcIn, 6)} USDC`}
         onClick={submit}
       />
@@ -223,7 +224,8 @@ function Sell({ fund, wallet, refresh }: Props) {
             .simulateContract({ address: HOOK, abi: hookAbi, functionName: 'exitSingle', args: [USDC, sharesIn, 0n], account: user.address })
             .then((r) => r.result)
       : undefined,
-    [valid, sharesIn, user?.address, fund?.readAt],
+    [valid, sharesIn, user?.address],
+    fund?.readAt,
   )
 
   async function submit() {
@@ -282,7 +284,7 @@ function Sell({ fund, wallet, refresh }: Props) {
       <ActionButton
         wallet={wallet}
         busy={tx.busy}
-        disabled={!valid || !sim.value || sim.loading}
+        disabled={!valid || !sim.value}
         label={valid ? `Sell ${amount(sharesIn, 18)} BSKT` : 'Enter an amount'}
         onClick={submit}
       />

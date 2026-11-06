@@ -38,8 +38,16 @@ export function useFund(user?: Address) {
 export type AsyncState<T> = { value?: T; error?: string; loading: boolean }
 
 /** Runs `fn` 350 ms after its inputs settle; `fn` undefined clears the result. Older results never overwrite newer. */
-export function useDebounced<T>(fn: (() => Promise<T>) | undefined, deps: unknown[]): AsyncState<T> {
+/**
+ * Runs `fn` 350 ms after its inputs settle. A change in `deps` (the amount, the tokens) drops the old value, so nothing
+ * acts on a quote for different inputs. A change in `refresh` (the 15-second data tick) re-checks but keeps the
+ * current value on screen, so buttons don't switch off every refresh.
+ */
+export function useDebounced<T>(fn: (() => Promise<T>) | undefined, deps: unknown[], refresh?: unknown): AsyncState<T> {
   const [state, setState] = useState<AsyncState<T>>({ loading: false })
+  useEffect(() => {
+    setState({ loading: !!fn })
+  }, deps)
   useEffect(() => {
     if (!fn) {
       setState({ loading: false })
@@ -57,7 +65,7 @@ export function useDebounced<T>(fn: (() => Promise<T>) | undefined, deps: unknow
       live = false
       clearTimeout(id)
     }
-  }, deps)
+  }, [...deps, refresh])
   return state
 }
 
