@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { Basket, Relay, Vault } from '@lucasmarkes/hairline/react'
 import { BANNER, HOOK, README_URL, REPLAY_TX, addressUrl, txUrl } from '../config.ts'
 import type { Fund } from '../lib/basket.ts'
 import { bps, percent, sharePrice, usd } from '../lib/format.ts'
+import { Architecture } from './Architecture.tsx'
 import { PoolsDiagram } from './How.tsx'
 import { ArrowUpRight, Check, Cross, Mark } from './icons.tsx'
 
 const NAV = [
+  ['Architecture', '#architecture'],
   ['How it works', '#steps'],
   ['Why it pays', '#compare'],
   ['Proof', '#proof'],
@@ -44,7 +47,7 @@ export function Landing({ fund }: { fund?: Fund }) {
       <header className="lp-nav">
         <a className="lp-logo" href="#">
           <Mark />
-          <span>ETF That Pays You</span>
+          <span>Tiffin Fi</span>
         </a>
         <nav aria-label="Sections">
           {NAV.map(([label, href]) => (
@@ -59,6 +62,7 @@ export function Landing({ fund }: { fund?: Fund }) {
       <main>
         <Hero />
         <Parts fund={fund} />
+        <Architecture />
         <Versus />
         <Live fund={fund} />
         <Proof />
@@ -124,19 +128,21 @@ function Parts({ fund }: { fund?: Fund }) {
       body: "The fund's balances, held as ERC-6909 claims in the v4 PoolManager. Every pair of the four assets is a pool, and all six trade against this one reserve.",
       stat: fund ? usd(fund.nav) : '6 pools',
       label: fund ? "in the reserve right now, at Chainlink's prices" : 'trade against one reserve',
-      diagram: true,
+      Figure: Vault,
     },
     {
       title: 'The market clock',
       body: "A Chainlink CRE workflow writes Wall Street's prices and hours into a clock contract on Arc. The hook reads it on every swap to set the fee and measure the edge.",
       stat: fund ? bps(fund.postedFeeBps) : '0.30%',
       label: fund ? `posted fee right now, with Wall Street ${fund.marketOpen ? 'open' : 'closed'}` : 'posted fee while Wall Street is open',
+      Figure: Relay,
     },
     {
       title: 'The fund token',
       body: 'BSKT is your share of the reserve. Buy it with USDC and sell it for USDC. Fees stay in the reserve, so each share redeems for more.',
       stat: fund ? sharePrice(fund.sharePriceUsd) : 'BSKT',
       label: fund ? 'for one BSKT right now' : 'your share of the reserve',
+      Figure: Basket,
     },
   ]
   const active = parts[open]
@@ -169,6 +175,7 @@ function Parts({ fund }: { fund?: Fund }) {
         </div>
         <div className="lp-part-card">
           {active.diagram && <PoolsDiagram dark />}
+          {active.Figure && <active.Figure play intensity={0.6} theme="dark" label={`Animated figure for ${active.title}`} className="hairline-fig" />}
           <p className="lp-part-kicker">{active.title}</p>
           <strong className="lp-part-stat">{active.stat}</strong>
           <p>{active.label}</p>
@@ -497,10 +504,10 @@ function Footer() {
         </nav>
       </div>
       <p className="lp-wordmark" aria-hidden="true">
-        <span>P</span>ays You
+        <span>T</span>iffin Fi
       </p>
       <p className="lp-disclaimer">
-        The ETF That Pays You is hackathon software built at ETHGlobal Mumbai. The contracts are unaudited and the stock
+        Tiffin Fi is hackathon software built at ETHGlobal Mumbai. The contracts are unaudited and the stock
         tokens are test tokens. Not investment advice, and not a registered fund or ETF. Nvidia, Apple, Microsoft, Uniswap,
         Chainlink and Arc are their owners' names.
       </p>

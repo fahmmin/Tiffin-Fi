@@ -17,3 +17,6 @@ dist/
 
 # Vercel project link
 .vercel/
+
+# Arc Studio CLI session registry
+.arc-studio/
