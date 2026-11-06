@@ -55,12 +55,21 @@ through the CRE forwarder. Testnet has no arbitrage bots, so `scripts/studio.mjs
 the clock's price. `scripts/push-prices.mjs --studio --every 60` is the owner fallback that keeps prices fresh
 between CRE runs.
 
+`scripts/studio.mjs monday` replays a Monday on Studio's contracts:
+
+1. The clock [reports Nvidia 5% above the pool](https://explorer.testnet.arc.io/tx/0xc054ec0511adfff825d3489dee901dd5a6d22ab0954ef63599f844f40d4414e4).
+2. [A bot buys the gap](https://explorer.testnet.arc.io/tx/0x517a5fa52e6028187e4eef9b211e9dcc6d604fdab23eb84951f36e6eced19952).
+   Its edge at Chainlink's price was $0.001229, and the hook kept $0.000983 of it (79.99%) for the fund.
+3. The clock gets its real prices back, and the pools are traded back to them.
+
 **How we got here.** We first prototyped Tiffin Fi with Claude Code. That prototype is the root of this repo
 (`src/`, `app/`, and the deployment below). Arc requires Arc Studio as the starting point, so we rebuilt the Arc
 track version from scratch in a fresh Studio project. An earlier Studio app where we only imported and audited the
 prototype is not the submission.
 
 ## Prototype, live on Arc testnet
+
+The prototype app is at [tiffinfi-prototype.vercel.app](https://tiffinfi-prototype.vercel.app).
 
 | Contract | Address |
 |---|---|
@@ -151,6 +160,9 @@ the forwarder to `onReport`. The owner can push the same report, which the Monda
   into the fund). On mainnet the fund would hold issuer tokens such as xStocks or Ondo's.
 - The Monday replay pushes the reference price itself to show a gap on demand; in production the CRE workflow
   writes it.
+- Arc's public RPC (`rpc.testnet.arc.io`) rate-limits contract reads on busy shared networks, such as the venue's
+  WiFi. The apps and scripts read through viem's fallback transport over Arc's dRPC and Blockdaemon endpoints, then
+  the public one.
 
 ## Security notes
 
