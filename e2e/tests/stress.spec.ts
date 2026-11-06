@@ -82,10 +82,14 @@ test('a cancelled approval shows a clear message and the form recovers', async (
 test('buys BSKT with USDC, then sells it back', async ({ page }) => {
   await openTrade(page)
   await page.locator('#buy-amount').fill('0.1')
-  // Two steps, two clicks: allow USDC, then buy.
-  await page.getByRole('button', { name: 'Allow 0.1 USDC' }).click()
-  await confirmed(page, 'Allow 0.1 USDC')
+  // Two steps, two clicks: allow USDC (skipped when an earlier run already allowed it), then buy.
+  const allow = page.getByRole('button', { name: 'Allow 0.1 USDC' })
   const buy = page.getByRole('button', { name: 'Buy BSKT for 0.1 USDC' })
+  await expect(allow.or(buy)).toBeEnabled()
+  if (await allow.isVisible()) {
+    await allow.click()
+    await confirmed(page, 'Allow 0.1 USDC')
+  }
   await expect(buy).toBeEnabled()
   await buy.click()
   await confirmed(page, 'Buy BSKT')
@@ -102,12 +106,20 @@ test('a double click sends one transaction, not two', async ({ page, wallet }) =
   await pick(page, 'Pay with', 'USDC')
   await pick(page, 'Receive', 'tAAPL')
   await page.locator('#swap-amount').fill('0.03')
-  await page.getByRole('button', { name: 'Allow 0.03 USDC' }).dblclick()
-  await confirmed(page, 'Allow 0.03 USDC')
-  expect(await sentCount(wallet)).toBe(1)
-  await page.getByRole('button', { name: 'Swap USDC for tAAPL' }).dblclick()
+  const allow = page.getByRole('button', { name: 'Allow 0.03 USDC' })
+  const go = page.getByRole('button', { name: 'Swap USDC for tAAPL' })
+  await expect(allow.or(go)).toBeEnabled()
+  if (await allow.isVisible()) {
+    const before = await sentCount(wallet)
+    await allow.dblclick()
+    await confirmed(page, 'Allow 0.03 USDC')
+    expect(await sentCount(wallet)).toBe(before + 1)
+  }
+  const before = await sentCount(wallet)
+  await expect(go).toBeEnabled()
+  await go.dblclick()
   await confirmed(page, 'Swap USDC for tAAPL')
-  expect(await sentCount(wallet)).toBe(2)
+  expect(await sentCount(wallet)).toBe(before + 1)
 })
 
 test('swaps USDC for a stock and one stock for another', async ({ page }) => {

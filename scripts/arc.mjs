@@ -13,13 +13,16 @@ export const arcTestnet = defineChain({
 
 export const deployment = JSON.parse(readFileSync(new URL('../deployments/arc-testnet.json', import.meta.url), 'utf8'))
 
-export const publicClient = createPublicClient({ chain: arcTestnet, transport: http() })
+// The public RPC rate-limits bursts (-32005); back off and retry instead of failing the script.
+const transport = () => http(undefined, { retryCount: 8, retryDelay: 1_000 })
+
+export const publicClient = createPublicClient({ chain: arcTestnet, transport: transport() })
 
 export function walletClient() {
   const key = process.env.PRIVATE_KEY
   if (!key) throw new Error('Set PRIVATE_KEY in the environment first')
   const account = privateKeyToAccount(key.startsWith('0x') ? key : `0x${key}`)
-  return createWalletClient({ account, chain: arcTestnet, transport: http() })
+  return createWalletClient({ account, chain: arcTestnet, transport: transport() })
 }
 
 export const erc20Abi = parseAbi([

@@ -130,9 +130,56 @@ async function seed() {
   writeFileSync(new URL('../deployments/arc-testnet-studio.json', import.meta.url), `${JSON.stringify({ chainId: 5042002, builtIn: 'Arc Studio', poolManager: POOL_MANAGER, ...s }, null, 2)}\n`)
 }
 
+/// Trades each stock/USDC pool back to the clock's reference price, as arbitrage bots would (testnet has none).
+async function rebalance() {
+  const wallet = walletClient()
+  const send = async (address, abi, functionName, args) => {
+    const hash = await wallet.writeContract({ address, abi, functionName, args })
+    const receipt = await publicClient.waitForTransactionReceipt({ hash })
+    if (receipt.status !== 'success') throw new Error(`${functionName} reverted: ${explorerTx(hash)}`)
+    return hash
+  }
+  const poolAbi = parseAbi([
+    'function poolPriceUsd(address asset) view returns (uint256)',
+    'function reserves() view returns (uint256[4])',
+  ])
+  const isqrt = (n) => {
+    if (n < 2n) return n
+    let x = n
+    let y = (x + 1n) / 2n
+    while (y < x) [x, y] = [y, (y + n / y) / 2n]
+    return x
+  }
+  const [prices] = await read(s.clock, clockAbi, 'state')
+  for (let round = 0; round < 4; round++) {
+    let moved = false
+    for (let i = 0; i < 3; i++) {
+      const pool = await read(s.hook, poolAbi, 'poolPriceUsd', [ASSETS[i]])
+      const target = prices[i]
+      if (Number(pool > target ? pool - target : target - pool) / Number(target) < 0.003) continue
+      const r = await read(s.hook, poolAbi, 'reserves')
+      const k = r[3] * r[i]
+      const buying = target > pool
+      const amountIn = buying ? isqrt((k * target) / 10n ** 30n) - r[3] : isqrt((k * 10n ** 30n) / target) - r[i]
+      if (!buying) await send(ASSETS[i], tokenAbi, 'mint', [OWNER, amountIn])
+      const [tokenIn, tokenOut] = buying ? [s.usdc, ASSETS[i]] : [ASSETS[i], s.usdc]
+      const key = await read(s.hook, hookAbi, 'poolKey', [tokenIn, tokenOut])
+      const hash = await send(s.router, routerAbi, 'swapExactInput', [key, same(key.currency0, tokenIn), amountIn, 0n, OWNER])
+      console.log(`${SYMBOLS[i]} pool $${formatUnits(pool, 18)} -> Chainlink $${formatUnits(target, 18)}: ${explorerTx(hash)}`)
+      moved = true
+    }
+    if (!moved) break
+  }
+  for (let i = 0; i < 3; i++) {
+    const pool = await read(s.hook, poolAbi, 'poolPriceUsd', [ASSETS[i]])
+    console.log(`  ${SYMBOLS[i]} pool $${Number(formatUnits(pool, 18)).toFixed(2)} vs Chainlink $${Number(formatUnits(prices[i], 18)).toFixed(2)}`)
+  }
+}
+
 await verify()
 if (failures) {
   console.log(`${failures} check(s) failed; not seeding.`)
   process.exit(1)
 }
 if (process.argv[2] === 'seed') await seed()
+if (process.argv[2] === 'rebalance') await rebalance()
