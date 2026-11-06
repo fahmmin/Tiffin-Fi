@@ -86,6 +86,12 @@ export function parseInput(value: string, decimals: number): bigint | null {
 }
 
 export function sanitizeInput(value: string, decimals: number): string {
+  // A leading minus is kept so that a negative amount stays visible and is rejected, not silently turned positive.
+  const minus = value.trim().startsWith('-') ? '-' : ''
+  return minus + sanitizeDigits(value, decimals)
+}
+
+function sanitizeDigits(value: string, decimals: number): string {
   const cleaned = value.replace(/,/g, '.').replace(/[^0-9.]/g, '')
   const parts = cleaned.split('.')
   const head = parts[0]

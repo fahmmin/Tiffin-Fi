@@ -4,11 +4,11 @@ import { publicClient } from '../chain'
 import { BSKT_DECIMALS, HOOK, SLIPPAGE_BPS, USDC_ASSET, hookAbi } from '../config'
 import { fmtShares, fmtToken, fmtUsd, parseInput } from '../format'
 import { estimateExitSingle, lossPct } from '../math'
-import { useAsync } from '../useAsync'
 import { useTx } from '../tx'
+import { useAsync } from '../useAsync'
 import { useFund } from '../useFund'
 import { useWallet } from '../wallet'
-import { ActionButton, AmountField, Receipt, Rows, Warn } from './TradeParts'
+import { ActionButton, AmountField, Receipt, Rows, TokenChip, Warn } from './TradeParts'
 
 export function Sell() {
   const { data } = useFund()
@@ -35,12 +35,11 @@ export function Sell() {
     })
   }, [data, raw])
   const overCap = !!est?.overCap
+  const maxOut = data ? (data.reserves[3] * 3000n) / 10_000n : null
 
   const canSim = !!account && !wrongChain && !!raw && raw > 0n && !overCap && !tooMuch && !stale
-  const sim = useAsync<bigint>(
-    canSim ? `${account}|${raw}` : null,
-    String(data?.block ?? 0),
-    async () => (await publicClient.simulateContract({ address: HOOK, abi: hookAbi, functionName: 'exitSingle', args: [USDC_ASSET.address, raw!, 0n], account: account! })).result,
+  const sim = useAsync<bigint>(canSim ? `${account}|${raw}` : null, String(data?.block ?? 0), async () =>
+    (await publicClient.simulateContract({ address: HOOK, abi: hookAbi, functionName: 'exitSingle', args: [USDC_ASSET.address, raw!, 0n], account: account! })).result,
   )
   const exact = sim.value
   const simError = sim.error
@@ -69,11 +68,12 @@ export function Sell() {
   else if (out === 0n) reason = 'Amount too small'
   else if (simError) reason = 'Cannot sell right now'
 
+  const postedFee = data ? ((data.postedBps * 0.75) / 100).toFixed(2) : null
+
   return (
     <div className="space-y-3">
       <AmountField
         label="You sell"
-        symbol="BSKT"
         value={amount}
         onChange={(v) => {
           setAmount(v)
@@ -81,22 +81,20 @@ export function Sell() {
           tx.reset()
         }}
         decimals={BSKT_DECIMALS}
+        right={<TokenChip symbol="BSKT" color="#6e54ff" />}
+        hint={maxOut !== null ? `Up to ${fmtToken(maxOut, 6)} USDC per sale right now, 30% of the fund's USDC.` : "30% of the fund's USDC per sale."}
         balanceText={balance !== undefined ? `Balance ${fmtShares(balance)}` : undefined}
         onMax={balance ? () => setAmount(formatUnits(balance, 18)) : undefined}
       />
-      <p className="label px-1 text-[12px] text-[#6b6878]">
-        Single-asset cap: one sale can take at most 30% of the fund's USDC
-        {data ? ` (${fmtToken(est?.maxOut ?? (data.reserves[3] * 3000n) / 10_000n, 6)} USDC right now).` : '.'}
-      </p>
 
       <Rows
         rows={[
-          { k: exact !== null ? 'You receive (simulated)' : 'You receive (estimate)', v: out > 0n ? `${fmtToken(out, 6)} USDC` : '—', strong: true },
-          { k: 'Your shares are worth', v: sharesUsd > 0n ? fmtUsd(sharesUsd) : '—' },
-          { k: 'Minimum you will accept (0.5% below)', v: out > 0n ? `${fmtToken(minOut, 6)} USDC` : '—' },
-          { k: 'Posted fee on this sale', v: data ? `${((data.postedBps * 0.75) / 100).toFixed(3)}% (three quarters of ${(data.postedBps / 100).toFixed(2)}%), stays in the fund` : '—' },
+          { k: exact !== null ? 'You get (simulated)' : 'You get', v: out > 0n ? `${fmtToken(out, 6)} USDC` : '–' },
+          { k: 'Worth', v: sharesUsd > 0n ? `${fmtUsd(sharesUsd)} of shares` : '–' },
+          { k: 'Fee', v: postedFee !== null ? `${postedFee}%, three quarters of the posted fee, left in the fund` : '–' },
         ]}
       />
+      {out > 0n && <p className="label px-1 text-[12px] text-ink-2">You will get at least {fmtToken(minOut, 6)} USDC (0.5% below{exact !== null ? ' the simulated result' : ' the estimate'}).</p>}
 
       {stale && <Warn>Chainlink's prices are stale, so single-asset sales are paused until the next update.</Warn>}
       {overCap && <Warn tone="red">That is more than 30% of the fund's USDC. Sell fewer shares or swap into a stock instead.</Warn>}
@@ -105,7 +103,7 @@ export function Sell() {
       {tx.error && <Warn tone="red">{tx.error}</Warn>}
 
       <ActionButton label="Sell for USDC" onClick={() => void sell()} ready={!reason} disabledReason={reason} phase={tx.phase} />
-      <Receipt hash={done ?? tx.hash} text="Confirmed on Arc testnet" />
+      <Receipt hash={done} text="Confirmed on Arc testnet" />
     </div>
   )
 }

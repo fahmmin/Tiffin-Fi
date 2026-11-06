@@ -5,7 +5,7 @@ import { WalletProvider } from './tiffin/wallet'
 import { ActivityPage } from './tiffin/pages/Activity'
 import { FundPage } from './tiffin/pages/Fund'
 import { HowPage } from './tiffin/pages/How'
-import { Landing } from './tiffin/pages/Landing'
+import { Landing } from './tiffin/landing/Landing'
 import { TradePage } from './tiffin/pages/Trade'
 
 function Routes() {

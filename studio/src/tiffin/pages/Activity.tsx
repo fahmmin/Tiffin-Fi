@@ -1,85 +1,77 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ExternalLink, Loader2, RefreshCw } from 'lucide-react'
-import { publicClient, txUrl } from '../chain'
+import { Loader2 } from 'lucide-react'
+import { addressUrl, publicClient, txUrl } from '../chain'
 import { ASSETS, DEPLOY_BLOCK, HOOK, LOG_CHUNK, assetByAddress, hookAbi } from '../config'
 import { ago, fmtShares, fmtToken, fmtUsd, shortAddr } from '../format'
-import { Button, Card, Pill, useNow } from '../ui'
+import { valueUsd } from '../math'
+import { Button, Card, Dot, Pill, useNow } from '../ui'
+import { useFund } from '../useFund'
+import { useWallet } from '../wallet'
 
-type Kind = 'Swapped' | 'Joined' | 'Exited'
+type Raw =
+  | { kind: 'Swap'; assetIn: string; assetOut: string; amountIn: bigint; amountOut: bigint; feeOut: bigint; protocolFee: bigint; edgeUsd: bigint; gapFee: bigint }
+  | { kind: 'Joined'; shares: bigint; amounts: readonly bigint[] }
+  | { kind: 'Exited'; shares: bigint; amounts: readonly bigint[] }
 
 interface Item {
   id: string
-  kind: Kind
   block: bigint
   logIndex: number
   hash: string
+  from?: string
   timestamp?: number
-  summary: string
-  detail?: string
-  gap: boolean
+  raw: Raw
 }
 
 const EVENTS = hookAbi.filter((x) => x.type === 'event')
-
-function amountsText(amounts: readonly bigint[]): string {
-  const parts = amounts
-    .map((a, i) => (a > 0n ? `${fmtToken(a, ASSETS[i].decimals)} ${ASSETS[i].symbol}` : null))
-    .filter(Boolean)
-  return parts.join(' + ') || '—'
-}
+const MAX_CHUNKS_PER_LOAD = 6
+const WANT_EVENTS = 12
 
 function toItem(log: Awaited<ReturnType<typeof publicClient.getLogs>>[number]): Item | null {
   const l = log as unknown as { eventName: string; args: Record<string, unknown>; blockNumber: bigint; logIndex: number; transactionHash: string }
   const base = { id: `${l.transactionHash}-${l.logIndex}`, block: l.blockNumber, logIndex: l.logIndex, hash: l.transactionHash }
-  if (l.eventName === 'Swap') {
-    const a = l.args as { assetIn: string; assetOut: string; amountIn: bigint; amountOut: bigint; feeOut: bigint; protocolFee: bigint; edgeUsd: bigint; gapFee: bigint }
-    const ain = assetByAddress(a.assetIn)
-    const aout = assetByAddress(a.assetOut)
-    if (!ain || !aout) return null
-    const gap = a.gapFee > 0n && a.protocolFee === 0n && a.feeOut === a.gapFee
-    return {
-      ...base,
-      kind: 'Swapped',
-      summary: `${fmtToken(a.amountIn, ain.decimals)} ${ain.symbol} for ${fmtToken(a.amountOut, aout.decimals)} ${aout.symbol}`,
-      detail: `Fee ${fmtToken(a.feeOut, aout.decimals)} ${aout.symbol}${gap ? `, gap edge ${fmtUsd(a.edgeUsd)}` : ''}`,
-      gap,
-    }
-  }
-  if (l.eventName === 'Joined') {
-    const a = l.args as { account: string; shares: bigint; amounts: readonly bigint[] }
-    return { ...base, kind: 'Joined', summary: `${shortAddr(a.account)} put in ${amountsText(a.amounts)}`, detail: `Received ${fmtShares(a.shares)} BSKT`, gap: false }
-  }
-  if (l.eventName === 'Exited') {
-    const a = l.args as { account: string; shares: bigint; amounts: readonly bigint[] }
-    return { ...base, kind: 'Exited', summary: `${shortAddr(a.account)} took out ${amountsText(a.amounts)}`, detail: `Burned ${fmtShares(a.shares)} BSKT`, gap: false }
-  }
+  if (l.eventName === 'Swap') return { ...base, raw: { kind: 'Swap', ...(l.args as Omit<Extract<Raw, { kind: 'Swap' }>, 'kind'>) } }
+  if (l.eventName === 'Joined') return { ...base, raw: { kind: 'Joined', ...(l.args as Omit<Extract<Raw, { kind: 'Joined' }>, 'kind'>) } }
+  if (l.eventName === 'Exited') return { ...base, raw: { kind: 'Exited', ...(l.args as Omit<Extract<Raw, { kind: 'Exited' }>, 'kind'>) } }
   return null
 }
 
-const MAX_CHUNKS_PER_LOAD = 6
-const WANT_EVENTS = 8
+function amountsText(amounts: readonly bigint[]): string {
+  const nz = amounts.map((a, i) => ({ a, i })).filter((x) => x.a > 0n)
+  if (nz.length >= 4) return 'all four assets'
+  return nz.map(({ a, i }) => `${fmtToken(a, ASSETS[i].decimals)} ${ASSETS[i].symbol}`).join(' + ') || '–'
+}
 
 export function ActivityPage() {
+  const { data } = useFund()
+  const { account } = useWallet()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
-  const [scanned, setScanned] = useState<{ from: bigint; head: bigint } | null>(null)
-  const cursor = useRef<bigint | null>(null) // next toBlock to scan (exclusive of what was scanned)
+  const cursor = useRef<bigint | null>(null)
   const busy = useRef(false)
   const stamps = useRef(new Map<bigint, number>())
+  const senders = useRef(new Map<string, string>())
 
-  const stamp = useCallback(async (list: Item[]) => {
-    const need = [...new Set(list.filter((i) => !stamps.current.has(i.block)).map((i) => i.block))]
-    await Promise.all(
-      need.map((n) =>
+  const enrich = useCallback(async (list: Item[]): Promise<Item[]> => {
+    const blocks = [...new Set(list.filter((i) => !stamps.current.has(i.block)).map((i) => i.block))]
+    const hashes = [...new Set(list.filter((i) => !senders.current.has(i.hash)).map((i) => i.hash))]
+    await Promise.all([
+      ...blocks.map((n) =>
         publicClient
           .getBlock({ blockNumber: n })
           .then((b) => stamps.current.set(n, Number(b.timestamp)))
           .catch(() => undefined),
       ),
-    )
-    return list.map((i) => ({ ...i, timestamp: stamps.current.get(i.block) }))
+      ...hashes.map((h) =>
+        publicClient
+          .getTransaction({ hash: h as `0x${string}` })
+          .then((t) => senders.current.set(h, t.from))
+          .catch(() => undefined),
+      ),
+    ])
+    return list.map((i) => ({ ...i, timestamp: stamps.current.get(i.block), from: senders.current.get(i.hash) }))
   }, [])
 
   const load = useCallback(
@@ -90,13 +82,11 @@ export function ActivityPage() {
       setError(null)
       try {
         let toBlock: bigint
-        let acc: Item[] = []
         if (reset || cursor.current === null) {
           toBlock = await publicClient.getBlockNumber()
           cursor.current = toBlock
           setItems([])
           setDone(false)
-          setScanned({ from: toBlock, head: toBlock })
         } else {
           toBlock = cursor.current
         }
@@ -107,19 +97,17 @@ export function ActivityPage() {
           let fromBlock = toBlock - LOG_CHUNK + 1n
           if (fromBlock < DEPLOY_BLOCK) fromBlock = DEPLOY_BLOCK
           const logs = await publicClient.getLogs({ address: HOOK, events: EVENTS, fromBlock, toBlock })
-          const mapped = logs.map(toItem).filter((x): x is Item => !!x)
-          fresh = fresh.concat(mapped)
+          fresh = fresh.concat(logs.map(toItem).filter((x): x is Item => !!x))
           chunks += 1
           toBlock = fromBlock - 1n
           cursor.current = toBlock
-          setScanned((s) => (s ? { ...s, from: fromBlock } : s))
           if (fromBlock <= DEPLOY_BLOCK) break
         }
         if (toBlock < DEPLOY_BLOCK) setDone(true)
-        acc = await stamp(fresh)
+        const enriched = await enrich(fresh)
         setItems((prev) => {
           const map = new Map(prev.map((i) => [i.id, i]))
-          for (const i of acc) map.set(i.id, i)
+          for (const i of enriched) map.set(i.id, i)
           return [...map.values()].sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1))
         })
       } catch {
@@ -129,7 +117,7 @@ export function ActivityPage() {
         setLoading(false)
       }
     },
-    [stamp],
+    [enrich],
   )
 
   useEffect(() => {
@@ -138,74 +126,85 @@ export function ActivityPage() {
   }, [load])
 
   const nowSec = useNow(30_000).getTime() / 1000
-  const tone = { Swapped: 'lav', Joined: 'cyan', Exited: 'grey' } as const
+
+  function describe(i: Item): { type: string; gap: boolean; title: string; sub?: string } {
+    const r = i.raw
+    if (r.kind === 'Swap') {
+      const ain = assetByAddress(r.assetIn)
+      const aout = assetByAddress(r.assetOut)
+      const title = ain && aout ? `Swapped ${fmtToken(r.amountIn, ain.decimals)} ${ain.symbol} for ${fmtToken(r.amountOut, aout.decimals)} ${aout.symbol}` : 'Swap'
+      const gap = r.gapFee > 0n && r.protocolFee === 0n && r.feeOut === r.gapFee
+      if (gap) {
+        const share = data ? BigInt(data.gapShareBps) : 8000n
+        const toFund = (r.edgeUsd * share) / 10_000n
+        return { type: 'Gap fee', gap: true, title, sub: `${fmtUsd(toFund)} to the fund, from the trader's ${fmtUsd(r.edgeUsd)} edge at Chainlink's prices.` }
+      }
+      const feeUsd = data && aout ? valueUsd(aout.index, r.feeOut, data.refPrices) : null
+      return { type: 'Swap', gap: false, title, sub: feeUsd !== null ? `Posted fee ${fmtUsd(feeUsd)}.` : undefined }
+    }
+    if (r.kind === 'Joined') return { type: 'Buy', gap: false, title: `Bought ${fmtShares(r.shares)} BSKT with ${amountsText(r.amounts)}` }
+    return { type: 'Sale', gap: false, title: `Sold ${fmtShares(r.shares)} BSKT for ${amountsText(r.amounts)}` }
+  }
 
   return (
-    <div className="mx-auto max-w-[820px] space-y-4">
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="display text-[24px]">Fund activity</h2>
-            <p className="label mt-1 text-[14px] text-[#55526a]">Swaps, joins and exits from the hook, newest first.</p>
-          </div>
-          <Button variant="outline" onClick={() => void load(true)} disabled={loading} className="!min-h-10 !px-4 !py-2 text-sm">
-            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-            Refresh
-          </Button>
-        </div>
+    <Card className="mx-auto max-w-[1130px] lg:mx-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="display text-[26px]">Swaps, buys and sales</h2>
+        <span className="label text-[13px] text-ink-2">Read from the hook's events on Arc</span>
+      </div>
 
-        {error && (
-          <p role="alert" className="label mt-4 rounded-2xl bg-[#FFE9E9] px-4 py-3 text-[13px] text-[#8C1C1C]">
-            {error}
-          </p>
-        )}
+      {error && (
+        <p role="alert" className="label mt-4 rounded-2xl bg-bad-soft px-4 py-3 text-[13px] font-medium text-bad">
+          {error}
+        </p>
+      )}
 
-        <ul className="mt-4 divide-y divide-[#ECEBF1]">
-          {items.map((i) => (
+      <ul className="mt-3 divide-y divide-line border-t border-line">
+        {items.map((i) => {
+          const d = describe(i)
+          const mine = !!account && !!i.from && i.from.toLowerCase() === account.toLowerCase()
+          return (
             <li key={i.id} className="py-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Pill tone={tone[i.kind]}>{i.kind}</Pill>
-                  {i.gap && <Pill tone="amber">Gap fee</Pill>}
-                </div>
-                <span className="label num text-[12px] text-[#6b6878]">{i.timestamp ? ago(Math.max(0, nowSec - i.timestamp)) : `Block ${i.block.toLocaleString('en-US')}`}</span>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <Pill tone={d.gap ? 'red' : 'grey'}>
+                  <Dot /> {d.type}
+                </Pill>
+                <span className="label num min-w-0 break-words text-[15px] font-semibold">{d.title}</span>
+                {mine && <Pill tone="lav">You</Pill>}
               </div>
-              <p className="label num mt-2 break-words text-[15px] font-medium">{i.summary}</p>
-              {i.detail && <p className="label num mt-0.5 text-[13px] text-[#55526a]">{i.detail}</p>}
-              <a
-                href={txUrl(i.hash)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="label mt-2 inline-flex min-h-8 items-center gap-1 text-[13px] font-medium text-accent-dark underline underline-offset-2"
-              >
-                {shortAddr(i.hash)} <ExternalLink className="size-3.5" aria-hidden="true" />
-              </a>
+              {d.sub && <p className="label num mt-1.5 text-[14px] text-ink-2">{d.sub}</p>}
+              <div className="label mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-2">
+                {i.from && (
+                  <a href={addressUrl(i.from)} target="_blank" rel="noopener noreferrer" className="num font-medium text-accent-ink underline underline-offset-2">
+                    {shortAddr(i.from)}
+                  </a>
+                )}
+                <span className="num">{i.timestamp ? ago(Math.max(0, nowSec - i.timestamp)) : `Block ${i.block.toLocaleString('en-US')}`}</span>
+                <a href={txUrl(i.hash)} target="_blank" rel="noopener noreferrer" className="font-medium text-accent-ink underline underline-offset-2">
+                  View transaction
+                </a>
+              </div>
             </li>
-          ))}
-        </ul>
+          )
+        })}
+      </ul>
 
-        {!loading && items.length === 0 && !error && (
-          <p className="label mt-4 rounded-2xl bg-[#F4F3F8] px-4 py-6 text-center text-[14px] text-[#55526a]">
-            No events in the blocks scanned so far.{done ? ' That is everything since the deploy.' : ' Load older blocks to keep looking.'}
-          </p>
+      {!loading && items.length === 0 && !error && (
+        <p className="label mt-4 rounded-2xl bg-well px-4 py-6 text-center text-[14px] text-ink-2">
+          No activity in the blocks scanned so far.{done ? ' That is everything since the deploy.' : ' Show older activity to keep looking.'}
+        </p>
+      )}
+
+      <div className="mt-5">
+        {!done ? (
+          <Button variant="outline" onClick={() => void load(false)} disabled={loading}>
+            {loading && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+            {loading ? 'Reading the chain…' : 'Show older activity'}
+          </Button>
+        ) : (
+          <p className="label text-[13px] text-ink-2">You have reached the deploy block.</p>
         )}
-
-        <div className="mt-4 flex flex-col items-center gap-2">
-          {scanned && (
-            <p className="label num text-[12px] text-[#6b6878]">
-              Scanned blocks {scanned.from.toLocaleString('en-US')} to {scanned.head.toLocaleString('en-US')} (9,000 per request)
-            </p>
-          )}
-          {!done ? (
-            <Button variant="outline" onClick={() => void load(false)} disabled={loading}>
-              {loading && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-              {loading ? 'Reading the chain…' : 'Load older blocks'}
-            </Button>
-          ) : (
-            <p className="label text-[13px] text-[#55526a]">You have reached the deploy block.</p>
-          )}
-        </div>
-      </Card>
-    </div>
+      </div>
+    </Card>
   )
 }

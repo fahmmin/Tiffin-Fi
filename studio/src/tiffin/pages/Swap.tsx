@@ -34,7 +34,7 @@ function TokenSelect({ value, onChange, exclude, label }: { value: number; onCha
       aria-label={label}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="display min-h-11 cursor-pointer rounded-full bg-white px-3.5 py-1.5 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="display min-h-10 cursor-pointer rounded-full bg-white px-3.5 py-1.5 text-[15px] shadow-card outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {ASSETS.map((a) => (
         <option key={a.key} value={a.index} disabled={a.index === exclude}>
@@ -149,7 +149,6 @@ export function Swap() {
     <div className="space-y-3">
       <AmountField
         label="You pay"
-        symbol={A.symbol}
         value={amount}
         onChange={(v) => {
           setAmount(v)
@@ -161,7 +160,7 @@ export function Swap() {
         balanceText={balance !== undefined ? `Balance ${fmtToken(balance, A.decimals)}` : undefined}
         onMax={balance ? () => setAmount(formatUnits(balance, A.decimals)) : undefined}
       />
-      <div className="relative z-10 -my-5 flex justify-center">
+      <div className="relative z-10 -my-4 flex justify-center">
         <button
           type="button"
           onClick={flip}
@@ -173,38 +172,31 @@ export function Swap() {
       </div>
       <AmountField
         label="You receive"
-        symbol={B.symbol}
         value={quote ? formatUnits(quote.amountOut, B.decimals) : ''}
         readOnly
         decimals={B.decimals}
         right={<TokenSelect value={to} onChange={pickTo} exclude={from} label="Token you receive" />}
-        hint={quote ? `Minimum ${fmtToken(minOut, B.decimals)} ${B.symbol} (0.5% below)` : undefined}
+        hint={quote ? `At least ${fmtToken(minOut, B.decimals)} ${B.symbol} (0.5% below)` : undefined}
       />
 
       <Rows
         rows={[
-          { k: 'You receive', v: quote ? `${fmtToken(quote.amountOut, B.decimals)} ${B.symbol}` : '—', strong: true },
+          { k: 'You get', v: quote ? `${fmtToken(quote.amountOut, B.decimals)} ${B.symbol}` : '–' },
+          { k: 'Worth', v: quote && data ? fmtUsd(outUsd) : '–' },
           {
             k: 'Fee',
-            v: quote ? (
-              <>
-                {fmtToken(quote.feeOut, B.decimals)} {B.symbol} <span className="text-[#6b6878]">({fmtUsd(quote.feeUsd)})</span>
-              </>
-            ) : (
-              '—'
-            ),
-          },
-          {
-            k: 'Who gets the fee',
             v: quote
-              ? quote.protocolFee > 0n
-                ? `Fund ${fmtToken(fundFee, B.decimals)}, protocol ${fmtToken(quote.protocolFee, B.decimals)}`
-                : quote.feeOut > 0n
-                  ? 'All of it goes to the fund'
-                  : '—'
-              : '—',
+              ? `${fmtToken(quote.feeOut, B.decimals)} ${B.symbol} (${fmtUsd(quote.feeUsd)}), ${
+                  quote.protocolFee > 0n
+                    ? `fund ${fmtToken(fundFee, B.decimals)}, protocol ${fmtToken(quote.protocolFee, B.decimals)}`
+                    : quote.feeOut > 0n
+                      ? 'all of it to the fund'
+                      : 'none'
+                }`
+              : data
+                ? `${fmtBps(data.postedBps)} posted fee`
+                : '–',
           },
-          { k: 'Posted fee right now', v: data ? fmtBps(data.postedBps) : '—' },
         ]}
       />
 
@@ -224,7 +216,7 @@ export function Swap() {
         <ActionButton label={`Swap ${A.symbol} for ${B.symbol}`} onClick={() => void doSwap()} ready={!reason} disabledReason={reason} phase={tx.phase} />
       )}
       <Receipt hash={done ?? approved} text={done ? 'Swapped. Confirmed on Arc testnet' : `${A.symbol} approved. Now swap.`} />
-      <p className="label px-1 text-[12px] text-[#6b6878]">One hop through one hook: every pair trades against the same shared reserve.</p>
+      
     </div>
   )
 }

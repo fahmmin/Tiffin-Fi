@@ -7,9 +7,9 @@
   --accent-dark: #5b42ea;
   --lav: #eeeafe;
   --card: #efefef;
-  --ink: #0d0a1a;
-  --line: #e7e6ec;
-  --muted: #6b6878;
+  --ink: #0d0d10;
+  --line: #e6e6ea;
+  --muted: #63666e;
 }
 
 * {
@@ -27,6 +27,7 @@ body {
   font-family: 'Stack Sans Headline', 'Geist', sans-serif;
   color: var(--ink);
   background: #fff;
+  font-size: 16px;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
@@ -74,7 +75,8 @@ input:focus-visible {
 }
 
 .grid-lines {
-  background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 88px);
+  background-image: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 16.6667% 100%;
 }
 
 @keyframes pulse-dot {

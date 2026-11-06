@@ -1,78 +1,96 @@
-import { Card, Pill } from '../ui'
+import { addressUrl } from '../chain'
+import { CLOCK, HOOK, ROUTER } from '../config'
+import { PoolDiagram } from '../diagrams'
+import { fmtBps, shortAddr } from '../format'
+import { Card, Dot, PENDING, Pill } from '../ui'
 import { useFund } from '../useFund'
-import { fmtBps } from '../format'
 
-const POINTS = [
-  {
-    n: '01',
-    title: 'One hook runs six pools from one shared reserve',
-    body: 'Nvidia, Apple, Microsoft and USDC make six pairs. All six Uniswap v4 pools are served by a single hook, and none of them holds liquidity of its own. The fund keeps one reserve of each asset, and every pair trades against it.',
-  },
-  {
-    n: '02',
-    title: 'The maths is plain x*y=k',
-    body: "Balancer's equal-weight formula collapses to the constant-product rule for any two assets: you receive reserveOut times amountIn, divided by reserveIn plus amountIn. Nothing exotic, and a trade across two stocks is still one hop.",
-  },
-  {
-    n: '03',
-    title: 'The fee is the larger of two numbers',
-    body: "Every swap pays the posted fee (0.30% while Wall Street is open, 0.60% while it is closed, 2% when Chainlink's prices are stale) or 80% of the trade's edge against Chainlink's reference prices, whichever is bigger. Edge is what the trader gets out, valued at the reference price, minus what they put in. The posted fee splits 90% to the fund and 10% to the protocol. The gap fee goes entirely to the fund.",
-  },
-  {
-    n: '04',
-    title: 'Monday morning pays the fund',
-    body: "When the market reopens, the pool still shows Friday's prices while Chainlink says the stocks moved. The first bot to trade the difference keeps 20% of its edge and the fund keeps 80%. Because the fee is a share of the edge, closing the whole gap is still the bot's best trade, and slicing it into pieces does not lower what the fund collects.",
-  },
-]
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-line py-4 first:border-t-0 first:pt-0">
+      <h3 className="display text-[18px]">{title}</h3>
+      <div className="label mt-1.5 text-[15px] leading-relaxed text-ink-2">{children}</div>
+    </div>
+  )
+}
 
 export function HowPage() {
   const { data } = useFund()
+  const gap = data ? data.gapShareBps / 100 : null
+  const protocol = data ? data.protocolShareBps / 100 : null
+  const contracts = [
+    { k: 'The hook and the BSKT token', a: HOOK },
+    { k: 'The router', a: ROUTER },
+    { k: 'The market clock', a: CLOCK },
+  ]
   return (
-    <div className="mx-auto max-w-[860px] space-y-4">
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <Card>
-        <h2 className="display text-[26px] sm:text-[30px]">How the fund gets paid</h2>
-        <p className="label mt-2 text-[15px] text-[#55526a]">
-          Tiffin Fi is a basket token whose reserves also work as exchange liquidity. Traders pay to use it, and holders collect.
+        <h2 className="display text-[24px]">One hook runs six pools</h2>
+        <div className="mx-auto mt-5 max-w-[520px]">
+          <PoolDiagram />
+        </div>
+        <p className="label mt-4 text-[16px] leading-relaxed">
+          Every pair of the four assets is its own Uniswap v4 pool, six in all, and all six point at one hook on Arc. The hook is the price curve: it keeps one shared reserve for the whole fund and prices each trade with Balancer's weighted maths, which with equal weights is x × y = k on the two balances being traded. A swap in any pool pays the same fund.
         </p>
-        {data && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Pill tone="cyan">Open {fmtBps(data.openBps)}</Pill>
-            <Pill tone="grey">Closed {fmtBps(data.closedBps)}</Pill>
-            <Pill tone="amber">Stale {fmtBps(data.staleBps)}</Pill>
-            <Pill tone="lav">Gap fee 80% of edge</Pill>
-          </div>
-        )}
       </Card>
 
-      {POINTS.map((p) => (
-        <Card key={p.n}>
-          <div className="flex gap-4">
-            <span className="display num text-[28px] text-accent">{p.n}</span>
-            <div>
-              <h3 className="display text-[21px] leading-tight">{p.title}</h3>
-              <p className="label mt-2 text-[15px] leading-relaxed text-[#55526a]">{p.body}</p>
-            </div>
-          </div>
-        </Card>
-      ))}
-
-      <section className="rounded-3xl bg-ink p-5 text-white sm:p-7" aria-labelledby="illus">
-        <Pill tone="lav">Illustration, not a forecast</Pill>
-        <h3 id="illus" className="display mt-3 text-[24px] leading-tight sm:text-[28px]">A 5% Monday gap on a $1M fund</h3>
-        <p className="label mt-2 max-w-xl text-[15px] leading-relaxed text-white/75">
-          Suppose the market reopens 5% above Friday's prices and the fund holds $1,000,000. That gap is worth about $228 to the bots that trade it. At 80%, the fund keeps about $182 of it, and the bots keep the rest. These are made-up round numbers to show the mechanism. The fund today is much smaller, and real gaps vary.
-        </p>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl bg-white/10 p-4">
-            <div className="label text-[12px] text-white/70">Worth to bots</div>
-            <div className="display num text-[30px]">about $228</div>
-          </div>
-          <div className="rounded-2xl bg-white/10 p-4">
-            <div className="label text-[12px] text-white/70">Fund keeps (80%)</div>
-            <div className="display num text-[30px] text-cyan">about $182</div>
-          </div>
+      <Card>
+        <h2 className="display text-[24px]">Each swap pays the larger of two fees</h2>
+        <div className="mt-4">
+          <Block title="The posted fee">
+            {data ? `${fmtBps(data.openBps)} while Wall Street is open, ${fmtBps(data.closedBps)} while it is closed and ${fmtBps(data.staleBps)} if Chainlink's prices are stale. ${100 - (protocol ?? 0)}% stays in the fund and ${protocol}% goes to the protocol.` : PENDING}
+          </Block>
+          <Block title="The gap fee">
+            {gap !== null ? `${gap}% of the trade's edge: what the trader receives, valued at Chainlink's reference price, minus what they paid. All of it stays in the fund.` : PENDING}
+          </Block>
         </div>
-      </section>
+        <p className="label mt-1 text-[16px] leading-relaxed">
+          That is how the fund stops the first bot after Monday's open from taking the weekend gap. The bot keeps {gap !== null ? 100 - gap : '…'}% of its edge, so closing the gap is still its best trade, and holders get the rest.
+        </p>
+        <div className="mt-4 rounded-2xl bg-well p-4">
+          <p className="label text-[15px]">
+            <Pill tone="grey" className="mr-2 align-middle">
+              <Dot /> Illustration, not live data
+            </Pill>
+            A $1M fund over a weekend, and Nvidia opens 5% higher on Monday.
+          </p>
+          <div className="mt-3 flex h-10 overflow-hidden rounded-xl text-[13px] font-bold" role="img" aria-label="The fund keeps $182 and the bot keeps $46">
+            <div className="label flex items-center bg-accent px-3 text-white" style={{ width: '80%' }}>
+              Fund $182
+            </div>
+            <div className="label flex flex-1 items-center justify-end bg-pink px-3 text-ink">Bot $46</div>
+          </div>
+          <p className="label mt-3 text-[14px] leading-relaxed text-ink-2">
+            Trading the pool up to the new price is worth about $228 to the first bot. The gap fee keeps $182 of it for holders, and the bot keeps $46.
+          </p>
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="display text-[24px]">Wall Street's clock, from Chainlink CRE</h2>
+        <p className="label mt-3 text-[16px] leading-relaxed">
+          A Chainlink CRE workflow writes Wall Street's reference prices, and whether the market is open, into a clock contract on Arc. The hook reads it on every trade to pick the posted fee and to measure each trade's edge.
+        </p>
+        <p className="label mt-4 text-[14px] leading-relaxed text-ink-2">
+          tNVDA, tAAPL and tMSFT are testnet stand-ins with no value. Only the deployer can mint them, so you get them by buying with USDC. Not a registered fund or ETF.
+        </p>
+      </Card>
+
+      <Card>
+        <h2 className="display text-[24px]">Contracts on Arc testnet</h2>
+        <ul className="label mt-3 divide-y divide-line border-t border-line">
+          {contracts.map((c) => (
+            <li key={c.a} className="flex items-center justify-between gap-3 py-3 text-[15px]">
+              <span className="text-ink-2">{c.k}</span>
+              <a href={addressUrl(c.a)} target="_blank" rel="noopener noreferrer" className="num font-semibold text-accent-ink underline underline-offset-2">
+                {shortAddr(c.a)}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <p className="label mt-3 text-[14px] text-ink-2">Open any address on the Arc explorer to read the code that holds the money.</p>
+      </Card>
     </div>
   )
 }

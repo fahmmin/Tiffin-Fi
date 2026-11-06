@@ -6,7 +6,12 @@ const arc = requireChain(CHAIN_ID)
 const usdc = getUsdc(CHAIN_ID)
 if (!usdc) throw new Error('USDC is not registered for Arc testnet')
 
-export const RPC_URL = arc.rpcUrls[0]
+/** Reads go through these in order; Arc's own RPC rate-limits contract reads on busy shared networks. */
+export const RPC_URLS: readonly string[] = [
+  'https://rpc.drpc.testnet.arc.io',
+  'https://rpc.blockdaemon.testnet.arc.io',
+  arc.rpcUrls[0],
+]
 export const EXPLORER = arc.explorerBase
 export const NATIVE = arc.nativeCurrency
 export const MULTICALL3: Address = '0xcA11bde05977b3631167028862bE2a173976CA11'
@@ -89,6 +94,7 @@ export const hookAbi = parseAbi([
   'function gapCapturedUsd() view returns (uint256)',
   'function protocolEarnedUsd() view returns (uint256)',
   'function swapCount() view returns (uint256)',
+  'function GAP_SHARE_BPS() view returns (uint256)',
   'function poolPriceUsd(address asset) view returns (uint256)',
   'function quote(address assetIn, address assetOut, uint256 amountIn) view returns (Quote)',
   'function poolKey(address a, address b) view returns (PoolKey)',

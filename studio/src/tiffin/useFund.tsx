@@ -5,6 +5,8 @@ import { ASSETS, CLOCK, HOOK, POLL_MS, ROUTER, clockAbi, erc20Abi, hookAbi } fro
 import { WAD } from './format'
 import { useWallet } from './wallet'
 
+export const READ_ERROR = 'Cannot reach Arc testnet right now. Retrying every 15 seconds.'
+
 export interface WalletReads {
   balances: bigint[] // 4 assets
   bskt: bigint
@@ -38,6 +40,7 @@ export interface FundData {
   priceTimes: number[]
   marketOpen: boolean
   marketTime: number
+  gapShareBps: number
   wallet: WalletReads | null
 }
 
@@ -80,6 +83,7 @@ export async function readAll(account: Address | null): Promise<FundData> {
     { ...hook, functionName: 'poolPriceUsd', args: [ASSETS[1].address] },
     { ...hook, functionName: 'poolPriceUsd', args: [ASSETS[2].address] },
     { address: CLOCK, abi: clockAbi, functionName: 'state' },
+    { ...hook, functionName: 'GAP_SHARE_BPS' },
   ] as const
 
   const walletCalls = account
@@ -98,6 +102,10 @@ export async function readAll(account: Address | null): Promise<FundData> {
   ])
   const r = results as unknown as RawResult[]
 
+  // Core reads must succeed. Otherwise treat the whole poll as failed and keep the last good values.
+  if (r[0].status !== 'success' || r[2].status !== 'success' || r[18].status !== 'success') {
+    throw new Error('Core reads failed')
+  }
   const reserves = val<readonly bigint[]>(r[0], [0n, 0n, 0n, 0n])
   const navPair = val<readonly [bigint, boolean]>(r[2], [0n, false])
   const clock = val<readonly [readonly bigint[], readonly bigint[], boolean, bigint]>(r[18], [[0n, 0n, 0n], [0n, 0n, 0n], false, 0n])
@@ -138,6 +146,7 @@ export async function readAll(account: Address | null): Promise<FundData> {
     priceTimes: clock[1].map((t) => Number(t)),
     marketOpen: clock[2],
     marketTime: Number(clock[3]),
+    gapShareBps: Number(val<bigint>(r[19], 8000n)),
     wallet,
   }
 }
@@ -159,7 +168,7 @@ export function FundProvider({ children, seed }: { children: ReactNode; seed?: F
       setData(next)
       setError(null)
     } catch {
-      if (mine === seq.current) setError('Could not read the chain. Retrying shortly.')
+      if (mine === seq.current) setError(READ_ERROR)
     } finally {
       if (mine === seq.current) setLoading(false)
     }
