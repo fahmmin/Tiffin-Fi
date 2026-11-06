@@ -5,4 +5,139 @@ Uniswap v4 hook on Arc. The hook prices every swap with Balancer's weighted math
 and a Chainlink CRE workflow tells it Wall Street's price and hours, so Monday's opening gap pays the fund
 instead of the first bot.
 
-Built at ETHGlobal Mumbai 2026. Work in progress.
+Built at ETHGlobal Mumbai 2026.
+
+## Live on Arc testnet
+
+| Contract | Address |
+|---|---|
+| BasketHook (the hook, and the fund token BSKT) | [`0xbF0EF20ace8103D22DaDd9e98bF49Abc969a2888`](https://explorer.testnet.arc.io/address/0xbF0EF20ace8103D22DaDd9e98bF49Abc969a2888) |
+| MarketClock (Chainlink CRE receiver) | [`0x11e65932196B07617180A8Fc5D1885BFd1170e9F`](https://explorer.testnet.arc.io/address/0x11e65932196B07617180A8Fc5D1885BFd1170e9F) |
+| BasketRouter | [`0x5b4781DdBb82EA8Ce01A9ae8392646f89D2A54cf`](https://explorer.testnet.arc.io/address/0x5b4781DdBb82EA8Ce01A9ae8392646f89D2A54cf) |
+| tNVDA / tAAPL / tMSFT (test shares) | [`0xb462…1548`](https://explorer.testnet.arc.io/address/0xb462642086474956f572bD5D9c5352F9FFe51548), [`0x7CD5…F55c`](https://explorer.testnet.arc.io/address/0x7CD5378302AF1086DbA7C6E4D3610e63ef71F55c), [`0x2136…97Ab`](https://explorer.testnet.arc.io/address/0x21369835194F59E895636F92359dE3C3241997Ab) |
+| Uniswap v4 PoolManager (already on Arc) | [`0x8366a39CC670B4001A1121B8F6A443A643e40951`](https://explorer.testnet.arc.io/address/0x8366a39CC670B4001A1121B8F6A443A643e40951) |
+| USDC (Arc's native USDC, ERC-20 interface) | `0x3600000000000000000000000000000000000000` |
+
+Transactions you can check:
+
+- Fund seeded with $4 each of tNVDA, tAAPL, tMSFT and Arc USDC: [join](https://explorer.testnet.arc.io/tx/0x59a7f92deb9c90f8cdc1767eace54abb7ea2a5d315a34e51f7a0634f65f5efd5).
+- Monday replay: the reference price for Nvidia jumps 5% above the pool ([report](https://explorer.testnet.arc.io/tx/0x625616cfd66fcad90f8f2a8238ed81370ce60e1a887013d8114a919c224b7ccf)), then a bot buys the gap ([swap](https://explorer.testnet.arc.io/tx/0x1adca61ace051fba6695322d09163a21415ea5793aafd9db85de31da5d96b13d)). The bot's edge was $0.002439; the fund kept $0.001951 (80%), the bot $0.000488 (20%).
+- The way back: real prices reported again ([report](https://explorer.testnet.arc.io/tx/0x0b7f5ba673fac41c6ab1c95a8f9fb82c34200f9272bf3c98c431baf7746c2098)) and the bot sells the gap back ([swap](https://explorer.testnet.arc.io/tx/0x6e87a5d9bce72d1cc9a005bdaadd0a30b25b6ac1e4468179e52acf7e667779bd)), again keeping only 20%.
+- Ordinary swaps: [USDC to AAPL](https://explorer.testnet.arc.io/tx/0xe0fd0dc2c61e5a7f8693a38c8f4dc35b49e26ac39ea63bd9c4e77dc50e4c385a) paid the 0.30% posted fee; [AAPL to MSFT](https://explorer.testnet.arc.io/tx/0xb79be01b1f3f6cb95b64485097b0e95d2195e9d6ed7ed3fce1c779bb44bba20c) is one hop through the same reserve.
+
+The amounts are small because the Arc faucet gives 20 USDC every two hours. The maths is the same at any size:
+on a $1M fund, a 5% Monday gap in Nvidia is worth about $228 to bots, and the hook keeps about $182 of it.
+
+## How it works
+
+```mermaid
+flowchart TB
+  subgraph PM["Uniswap v4 PoolManager on Arc"]
+    P1["NVDA / USDC"]
+    P2["AAPL / USDC"]
+    P3["MSFT / USDC"]
+    P4["NVDA / AAPL"]
+    P5["NVDA / MSFT"]
+    P6["AAPL / MSFT"]
+    R[("Shared reserve: ERC-6909 claims, 25% each")]
+  end
+  H["BasketHook: beforeSwap is the curve, Balancer weighted maths"]
+  C["MarketClock: reference price, is Wall Street open"]
+  W["Chainlink CRE workflow, every 5 minutes"]
+  U["Holder"]
+  P1 & P2 & P3 & P4 & P5 & P6 -- "swap calls beforeSwap" --> H
+  H -- "takes the input, pays the output" --> R
+  W -- "signed report through the forwarder" --> C
+  C -- "price and market hours" --> H
+  U -- "join or exit" --> H
+  H -- "mints or burns BSKT" --> U
+```
+
+**One hook, six pools, one reserve.** Every pair of the four assets is a v4 pool whose hook is `BasketHook`.
+In `beforeSwap` the hook takes the whole input and pays the whole output, and returns a `BeforeSwapDelta` that
+leaves nothing for v4's own concentrated-liquidity maths to swap. The hook keeps the fund's balances as ERC-6909
+claims in the PoolManager. Claims are per token, not per pool, so all six pools trade against the same USDC.
+Plain liquidity positions are blocked in `beforeAddLiquidity`; you join the fund through the hook and get BSKT.
+
+**Balancer's maths.** The price of any swap comes from Balancer's weighted formula,
+`out = B_out × (1 − (B_in / (B_in + A_in)) ^ (w_in / w_out))`. With every weight at 25% the power is 1, so a
+swap between two assets is exactly `x · y = k` on their two balances, with no fractional powers. Buying or
+selling the basket with a single asset uses Balancer's single-asset join and exit. With weight 1/4 that is a
+fourth root (two square roots) or a fourth power, and the result is capped at the value the reference prices
+give, so nobody can buy a stale fund cheaply that way either.
+
+**Who gets paid.** Each swap pays the larger of two fees:
+
+| Fee | Size | Where it goes |
+|---|---|---|
+| Posted fee | 0.30% while Wall Street is open, 0.60% while it's closed, 2% if prices are stale | 90% stays in the fund, 10% to the protocol |
+| Gap fee | 80% of the trade's edge: what the trader receives at the reference price, minus what they paid | All of it stays in the fund |
+
+On a normal trade the posted fee is larger. When the pool still shows Friday's price and Chainlink shows
+Monday's, the first trader gets an edge and the gap fee takes 80% of it. Twenty percent of the biggest edge is
+still the bot's biggest profit, so the bot still closes the whole gap; and because edges add up, splitting the
+trade into pieces doesn't lower the fee. Both are tested. Fees stay in the reserve, so each BSKT redeems for more.
+
+**The clock.** `MarketClock` stores a reference price per stock and whether the US market is open. A Chainlink CRE
+workflow (`cre/`) fetches prices with node consensus, works out NYSE hours, and writes a signed report through
+the forwarder to `onReport`. The owner can push the same report, which the Monday replay uses.
+
+## What's real and what's test
+
+- Real: Arc testnet, Uniswap's v4 PoolManager on Arc, Arc's native USDC (the fund holds and settles in it), and
+  stock prices taken from the market.
+- Test: the three stock tokens (`MockStock`, mintable only by the deployer, so nobody can mint shares and sell them
+  into the fund). On mainnet the fund would hold issuer tokens such as xStocks or Ondo's.
+- The Monday replay pushes the reference price itself to show a gap on demand; in production the CRE workflow
+  writes it.
+
+## Repo
+
+```
+src/BasketHook.sol    the hook, the curve, fees, joins and exits, and the BSKT token
+src/MarketClock.sol   CRE receiver: reference prices and market hours
+src/BasketRouter.sol  minimal exact-input router used by the app and scripts
+src/MockStock.sol     test share token
+test/                 Foundry tests on a local PoolManager
+script/Deploy.s.sol   Arc deployment with a mined hook address
+scripts/              viem scripts: seed the fund, Monday replay, swaps
+cre/                  Chainlink CRE workflow
+app/                  mobile web app
+FEEDBACK.md           feedback for Uniswap
+```
+
+Run the tests:
+
+```bash
+forge test
+```
+
+Deploy and demo on Arc testnet (needs `PRIVATE_KEY` exported in your shell, and testnet USDC from
+[faucet.circle.com](https://faucet.circle.com)):
+
+```bash
+NVDA_PRICE=188705000000000000000 AAPL_PRICE=344850000000000000000 MSFT_PRICE=538150000000000000000 MARKET_OPEN=true SEED_USDC=4000000 forge script script/Deploy.s.sol --rpc-url arc --broadcast --slow
+```
+
+```bash
+npm install && node scripts/seed.mjs && node scripts/monday.mjs
+```
+
+Arc's USDC checks a blocklist precompile that Foundry's local simulation can't run, so the deploy script stops
+before the first USDC transfer and `scripts/seed.mjs` sends the join with viem.
+
+## Partners
+
+- **Uniswap v4:** a custom-curve hook (`beforeSwap` with `BeforeSwapDelta`) that runs six pools from one reserve of
+  ERC-6909 claims, with Balancer's weighted maths and a market-clock fee. Feedback in `FEEDBACK.md`.
+- **Arc:** deployed on Arc testnet against the v4 PoolManager already there; the fund settles in Arc's USDC, and
+  USDC pays the gas.
+- **Chainlink CRE:** the workflow in `cre/` is the fund's clock; `MarketClock` is its on-chain receiver.
+
+## AI usage
+
+This project was built with Claude Code, Anthropic's coding agent, during the hackathon. The team chose the
+product, the fee design and the partners. Claude Code wrote the contracts in `src/`, the tests in `test/`, the
+deploy and demo scripts in `script/` and `scripts/`, the CRE workflow in `cre/` and the app in `app/` from that
+design, and ran the tests and the Arc deployment. Commits made with AI assistance carry a
+`Co-Authored-By: Claude` trailer.
