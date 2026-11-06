@@ -7,7 +7,8 @@ Uniswap v4 hook on Arc. The hook prices every swap with Balancer's weighted math
 and a Chainlink CRE workflow tells it Wall Street's price and hours, so Monday's opening gap pays the fund
 instead of the first bot.
 
-Built at ETHGlobal Mumbai 2026. **Live app: [tiffinfi.vercel.app](https://tiffinfi.vercel.app)**
+Built at ETHGlobal Mumbai 2026. **Live app: [tiffinfi.vercel.app](https://tiffinfi.vercel.app)**, the Arc Studio
+build. The prototype we built first is at [tiffinfi-prototype.vercel.app](https://tiffinfi-prototype.vercel.app).
 
 ## Arc track: built end to end in Arc Studio
 
@@ -15,7 +16,7 @@ Bounty: **Best DeFi / Onchain Finance App Built End to End in Arc Studio.**
 
 **Arc Studio project: [studio.arc.io/app/fdcb28e0-c08d-4981-9c0d-9a7ae25774d0](https://studio.arc.io/app/fdcb28e0-c08d-4981-9c0d-9a7ae25774d0)**
 
-The Studio project started from a plain description of Tiffin Fi, with no code uploaded. Arc Studio then did four
+The Studio project started from a plain description of Tiffin Fi, with no code uploaded. Arc Studio then did five
 things:
 
 1. Wrote the contracts and 114 Foundry tests, including fuzz and invariant tests, and reviewed them.
@@ -23,6 +24,13 @@ things:
 3. Deployed everything to Arc testnet from its own wallet. Its `BasketBootstrap` contract puts the hook at its v4
    flag address and opens the six pools, because the platform wallet can't call the CREATE2 deployer directly.
 4. Built the web app.
+5. Redesigned the web app to match our prototype. It worked from a design spec and screenshots in
+   [`docs/design/`](docs/design/), sent as read-only references, and wrote all of the code itself. It also made the
+   app read through a fallback across Arc's RPC providers. This build is the live app.
+
+Our end-to-end suite drives this build with a real wallet and real Arc testnet transactions:
+connect and add Arc, a cancelled approval, bad amounts, buy and sell, swap, and a wallet that leaves Arc. All six
+tests in `e2e/tests/studio.spec.ts` pass.
 
 Its code is in [`studio/`](studio/), pulled from the workspace with `arc-studio pull`.
 
