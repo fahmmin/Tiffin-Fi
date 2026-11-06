@@ -58,7 +58,33 @@ const routerAbi = parseAbi([
   'function swapExactInput(PoolKey key, bool zeroForOne, uint256 amountIn, uint256 minAmountOut, address recipient) returns (uint256)',
 ])
 
+const poolAbi = parseAbi([
+  'function poolPriceUsd(address asset) view returns (uint256)',
+  'function reserves() view returns (uint256[4])',
+  'function gapCapturedUsd() view returns (uint256)',
+])
+
 const read = (address, abi, functionName, args = []) => publicClient.readContract({ address, abi, functionName, args })
+
+/** Sends one transaction, fails loudly on a revert, then pauses to stay under the public RPCs' rate limits. */
+function sender() {
+  const wallet = walletClient()
+  return async (address, abi, functionName, args) => {
+    const hash = await wallet.writeContract({ address, abi, functionName, args })
+    const receipt = await publicClient.waitForTransactionReceipt({ hash })
+    if (receipt.status !== 'success') throw new Error(`${functionName} reverted: ${explorerTx(hash)}`)
+    await new Promise((r) => setTimeout(r, 3_000))
+    return hash
+  }
+}
+
+const isqrt = (n) => {
+  if (n < 2n) return n
+  let x = n
+  let y = (x + 1n) / 2n
+  while (y < x) [x, y] = [y, (y + n / y) / 2n]
+  return x
+}
 const same = (a, b) => getAddress(a) === getAddress(b)
 let failures = 0
 const check = (ok, what) => {
@@ -97,13 +123,7 @@ async function price(symbol) {
 }
 
 async function seed() {
-  const wallet = walletClient()
-  const send = async (address, abi, functionName, args) => {
-    const hash = await wallet.writeContract({ address, abi, functionName, args })
-    const receipt = await publicClient.waitForTransactionReceipt({ hash })
-    if (receipt.status !== 'success') throw new Error(`${functionName} reverted: ${explorerTx(hash)}`)
-    return hash
-  }
+  const send = sender()
   const prices = [await price('NVDA'), await price('AAPL'), await price('MSFT')]
   const report = encodeAbiParameters([{ type: 'uint256[]' }, { type: 'bool' }], [prices, nyseOpen()])
   console.log(`prices pushed: ${explorerTx(await send(s.clock, clockAbi, 'pushReport', [report]))}`)
@@ -132,25 +152,7 @@ async function seed() {
 
 /// Trades each stock/USDC pool back to the clock's reference price, as arbitrage bots would (testnet has none).
 async function rebalance() {
-  const wallet = walletClient()
-  const send = async (address, abi, functionName, args) => {
-    const hash = await wallet.writeContract({ address, abi, functionName, args })
-    const receipt = await publicClient.waitForTransactionReceipt({ hash })
-    if (receipt.status !== 'success') throw new Error(`${functionName} reverted: ${explorerTx(hash)}`)
-    await new Promise((r) => setTimeout(r, 3_000)) // stay under the public RPC's rate limit
-    return hash
-  }
-  const poolAbi = parseAbi([
-    'function poolPriceUsd(address asset) view returns (uint256)',
-    'function reserves() view returns (uint256[4])',
-  ])
-  const isqrt = (n) => {
-    if (n < 2n) return n
-    let x = n
-    let y = (x + 1n) / 2n
-    while (y < x) [x, y] = [y, (y + n / y) / 2n]
-    return x
-  }
+  const send = sender()
   const [prices] = await read(s.clock, clockAbi, 'state')
   for (let round = 0; round < 4; round++) {
     let moved = false
@@ -177,6 +179,34 @@ async function rebalance() {
   }
 }
 
+/// Monday replay on Studio's contracts: Chainlink's NVDA price jumps GAP_PCT (default 5%) above the pool, a bot buys
+/// the gap, and the hook keeps 80% of its edge. Then the clock gets its real prices back and the pools are traded back.
+/// The owner pushes both reports here; in production the Chainlink CRE workflow writes the same report.
+async function monday() {
+  const send = sender()
+  const [prices, , open] = await read(s.clock, clockAbi, 'state')
+  const report = (p) => encodeAbiParameters([{ type: 'uint256[]' }, { type: 'bool' }], [p, open])
+  const pool = await read(s.hook, poolAbi, 'poolPriceUsd', [s.nvda])
+  const target = (pool * BigInt(Math.round((100 + Number(process.env.GAP_PCT ?? '5')) * 100))) / 10_000n
+  console.log(`Friday: the pool prices NVDA at $${formatUnits(pool, 18)}`)
+  const pushed = await send(s.clock, clockAbi, 'pushReport', [report([target, prices[1], prices[2]])])
+  console.log(`Monday: Chainlink says $${formatUnits(target, 18)}: ${explorerTx(pushed)}`)
+
+  const r = await read(s.hook, poolAbi, 'reserves')
+  const amountIn = isqrt((r[3] * r[0] * target) / 10n ** 30n) - r[3]
+  const q = await read(s.hook, hookAbi, 'quote', [s.usdc, s.nvda, amountIn])
+  const key = await read(s.hook, hookAbi, 'poolKey', [s.usdc, s.nvda])
+  const before = await read(s.hook, poolAbi, 'gapCapturedUsd')
+  const hash = await send(s.router, routerAbi, 'swapExactInput', [key, same(key.currency0, s.usdc), amountIn, 0n, OWNER])
+  const kept = (await read(s.hook, poolAbi, 'gapCapturedUsd')) - before
+  console.log(`a bot buys the gap with ${formatUnits(amountIn, 6)} USDC: ${explorerTx(hash)}`)
+  console.log(`  bot's edge at Chainlink's price $${formatUnits(q.edgeUsd, 18)}`)
+  console.log(`  the fund kept $${formatUnits(kept, 18)} (${q.edgeUsd ? Number((kept * 10_000n) / q.edgeUsd) / 100 : 0}%), the bot $${formatUnits(q.edgeUsd - kept, 18)}`)
+
+  console.log(`real prices back on the clock: ${explorerTx(await send(s.clock, clockAbi, 'pushReport', [report(prices)]))}`)
+  await rebalance()
+}
+
 await verify()
 if (failures) {
   console.log(`${failures} check(s) failed; not seeding.`)
@@ -184,3 +214,4 @@ if (failures) {
 }
 if (process.argv[2] === 'seed') await seed()
 if (process.argv[2] === 'rebalance') await rebalance()
+if (process.argv[2] === 'monday') await monday()
