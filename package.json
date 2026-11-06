@@ -1,0 +1,12 @@
+{
+  "name": "etf-that-pays-you",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "node scripts/seed.mjs",
+    "monday": "node scripts/monday.mjs"
+  },
+  "dependencies": {
+    "viem": "2.38.6"
+  }
+}
