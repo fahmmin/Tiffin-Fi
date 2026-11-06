@@ -1,0 +1,10 @@
+{
+  "name": "etf-board",
+  "private": true,
+  "type": "module",
+  "description": "Builds architecture.tldr with node build-board.mjs",
+  "dependencies": {
+    "@tldraw/tlschema": "5.6.0",
+    "@tldraw/utils": "5.6.0"
+  }
+}

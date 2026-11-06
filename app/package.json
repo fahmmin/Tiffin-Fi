@@ -10,6 +10,7 @@
     "check": "node scripts/check.ts"
   },
   "dependencies": {
+    "@lucasmarkes/hairline": "0.5.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "viem": "2.38.6"
