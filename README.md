@@ -91,6 +91,19 @@ the forwarder to `onReport`. The owner can push the same report, which the Monda
 - The Monday replay pushes the reference price itself to show a gap on demand; in production the CRE workflow
   writes it.
 
+## Security notes
+
+- The reference price can only make a trade more expensive or a payout smaller. The curve sets the price; the
+  clock only adds the gap fee and caps single-asset joins and exits with a `min()`. A wrong price can annoy
+  traders but can't drain the fund: at worst the fund behaves like a plain weighted pool.
+- The gap fee is capped at 10% of the output. Prices older than 6 hours switch the gap fee off and charge the 2%
+  posted fee instead.
+- `MarketClock` takes reports from Chainlink's forwarders and from the owner. The simulation forwarder is meant
+  for testing, so it is allowlisted for the demo only; the owner can remove it with `setForwarder`.
+- `beforeSwapReturnDelta` is the most powerful hook permission. The hook only moves its own claims, by the
+  amounts it quotes, and the tests cover swap, join and exit accounting.
+- Hackathon code, unaudited, testnet only.
+
 ## Repo
 
 ```
