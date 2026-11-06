@@ -1,10 +1,14 @@
-import { createPublicClient, defineChain, http, type Address, type Hash } from 'viem'
+import { createPublicClient, defineChain, fallback, http, type Address, type Hash } from 'viem'
 import { arcTestnet } from 'viem/chains'
 
-// viem ships Arc testnet (with multicall3); the RPC and explorer below are the ones this deployment uses.
+// Arc's own RPC rate-limits contract reads on busy shared networks (a hackathon venue's WiFi), so reads fall back
+// across Arc's RPC providers. Wallets that add Arc through the app get the same list.
+const RPCS = ['https://rpc.drpc.testnet.arc.io', 'https://rpc.blockdaemon.testnet.arc.io', 'https://rpc.testnet.arc.io']
+
+// viem ships Arc testnet (with multicall3); the RPCs and explorer below are the ones this deployment uses.
 export const arc = defineChain({
   ...arcTestnet,
-  rpcUrls: { default: { http: ['https://rpc.testnet.arc.io'] } },
+  rpcUrls: { default: { http: RPCS } },
   blockExplorers: { default: { name: 'Arc explorer', url: 'https://explorer.testnet.arc.io' } },
 })
 
@@ -36,8 +40,8 @@ export const REPLAY_TX = '0x1adca61ace051fba6695322d09163a21415ea5793aafd9db85de
 
 export const client = createPublicClient({
   chain: arc,
-  // The public RPC rate-limits bursts; viem retries rate-limit errors with backoff.
-  transport: http(undefined, { retryCount: 4, retryDelay: 600, timeout: 20_000 }),
+  // Each RPC retries once with backoff, then the next one takes the request.
+  transport: fallback(RPCS.map((url) => http(url, { retryCount: 1, retryDelay: 600, timeout: 20_000 }))),
   pollingInterval: 1_500,
 })
 

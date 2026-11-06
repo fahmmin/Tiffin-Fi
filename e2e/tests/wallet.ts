@@ -2,7 +2,7 @@
 // removeListener, accountsChanged and chainChanged), but it signs and sends real Arc testnet transactions in Node with
 // the throwaway e2e key. It starts on Ethereum without Arc, like a fresh MetaMask, so the app has to add Arc itself.
 import { test as base, type Page } from '@playwright/test'
-import { createPublicClient, createWalletClient, http, type Hex } from 'viem'
+import { createPublicClient, createWalletClient, fallback, http, type Hex } from 'viem'
 import { mnemonicToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 
@@ -50,7 +50,12 @@ export const test = base.extend<{ wallet: TestWallet }>({
     const seed = process.env.E2E_SEED
     if (!seed) throw new Error('E2E_SEED is missing: run "npm run wallet" and "npm run fund" first')
     const account = mnemonicToAccount(seed)
-    const transport = http('https://rpc.testnet.arc.io', { retryCount: 5, retryDelay: 700 })
+    // Arc's own RPC rate-limits contract reads on busy networks; fall back across Arc's RPC providers.
+    const transport = fallback(
+      ['https://rpc.drpc.testnet.arc.io', 'https://rpc.blockdaemon.testnet.arc.io', 'https://rpc.testnet.arc.io'].map((url) =>
+        http(url, { retryCount: 3, retryDelay: 700 }),
+      ),
+    )
     const reader = createPublicClient({ chain: arcTestnet, transport })
     const signer = createWalletClient({ account, chain: arcTestnet, transport })
     let chainId = 1

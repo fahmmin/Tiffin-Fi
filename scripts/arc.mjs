@@ -1,20 +1,23 @@
 // Shared Arc testnet setup for the chain scripts. The key comes from the environment, never from a file here.
 import { readFileSync } from 'node:fs'
-import { createPublicClient, createWalletClient, defineChain, http, parseAbi } from 'viem'
+import { createPublicClient, createWalletClient, defineChain, fallback, http, parseAbi } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
+
+// Arc's own RPC rate-limits contract reads on busy shared networks, so every script falls back across Arc's providers.
+const RPCS = ['https://rpc.drpc.testnet.arc.io', 'https://rpc.blockdaemon.testnet.arc.io', 'https://rpc.testnet.arc.io']
 
 export const arcTestnet = defineChain({
   id: 5042002,
   name: 'Arc Testnet',
   nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
-  rpcUrls: { default: { http: ['https://rpc.testnet.arc.io'] } },
+  rpcUrls: { default: { http: RPCS } },
   blockExplorers: { default: { name: 'Arc explorer', url: 'https://explorer.testnet.arc.io' } },
 })
 
 export const deployment = JSON.parse(readFileSync(new URL('../deployments/arc-testnet.json', import.meta.url), 'utf8'))
 
-// The public RPC rate-limits bursts (-32005); back off and retry instead of failing the script.
-const transport = () => http(undefined, { retryCount: 8, retryDelay: 1_000 })
+// Rate limits (-32005): each RPC backs off and retries, then the next one takes the request.
+const transport = () => fallback(RPCS.map((url) => http(url, { retryCount: 3, retryDelay: 1_000 })))
 
 export const publicClient = createPublicClient({ chain: arcTestnet, transport: transport() })
 
