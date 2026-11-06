@@ -9,7 +9,51 @@ instead of the first bot.
 
 Built at ETHGlobal Mumbai 2026. **Live app: [tiffinfi.vercel.app](https://tiffinfi.vercel.app)**
 
-## Live on Arc testnet
+## Arc track: built end to end in Arc Studio
+
+Bounty: **Best DeFi / Onchain Finance App Built End to End in Arc Studio.**
+
+**Arc Studio project: [studio.arc.io/app/fdcb28e0-c08d-4981-9c0d-9a7ae25774d0](https://studio.arc.io/app/fdcb28e0-c08d-4981-9c0d-9a7ae25774d0)**
+
+The Studio project started from a plain description of Tiffin Fi, with no code uploaded. Arc Studio then did four
+things:
+
+1. Wrote the contracts and 114 Foundry tests, including fuzz and invariant tests, and reviewed them.
+2. Added the exit fee its review asked for.
+3. Deployed everything to Arc testnet from its own wallet. Its `BasketBootstrap` contract puts the hook at its v4
+   flag address and opens the six pools, because the platform wallet can't call the CREATE2 deployer directly.
+4. Built the web app.
+
+Its code is in [`studio/`](studio/), pulled from the workspace with `arc-studio pull`.
+
+| Arc Studio deployment | Address |
+|---|---|
+| BasketHook (BSKT) | [`0x4ff4fb09A5934aa98e5740465A5535fb25c6e888`](https://explorer.testnet.arc.io/address/0x4ff4fb09A5934aa98e5740465A5535fb25c6e888) |
+| MarketClock | [`0x25610623501dfa7e73d5309ce7e31058bb487809`](https://explorer.testnet.arc.io/address/0x25610623501dfa7e73d5309ce7e31058bb487809) |
+| BasketRouter | [`0x34666e4b2b5022071c8205474ee8e252812bfd74`](https://explorer.testnet.arc.io/address/0x34666e4b2b5022071c8205474ee8e252812bfd74) |
+| BasketBootstrap | [`0x51aa0273fc2e426b7c2487256c5211e0bf98b11f`](https://explorer.testnet.arc.io/address/0x51aa0273fc2e426b7c2487256c5211e0bf98b11f) |
+| tNVDA / tAAPL / tMSFT | [`0xe99e…dc50`](https://explorer.testnet.arc.io/address/0xe99e06837468301ec7fab24e7092aefccda8dc50), [`0x8460…a325`](https://explorer.testnet.arc.io/address/0x846073a79a94e1c64c946855ec4f8d59ef5ba325), [`0x4925…5cba6`](https://explorer.testnet.arc.io/address/0x4925d2907dbfd3801aee4165a0214df330b5cba6) |
+
+`scripts/studio.mjs verify` re-checks on chain everything Studio reported, and all 19 checks pass:
+
+- the hook's address and flags (`0x2888`);
+- the owners and minters;
+- the asset order;
+- both Chainlink CRE forwarders;
+- all six pools initialised with the hook.
+
+`scripts/studio.mjs seed` then pushed live prices,
+[seeded the fund](https://explorer.testnet.arc.io/tx/0x5ba24d7e2c25c5e49232025be986947dff272c953deb7014c1ca89bdd1dc4a2e)
+with $2 each of the three stocks and USDC ($8, share price $1.00), and routed
+[a 0.1 USDC swap](https://explorer.testnet.arc.io/tx/0x4d745b906e9e24a809a344cd86aec9fe22ff3181c681ebc88cfbe1a0231ef620)
+through Studio's router.
+
+**How we got here.** We first prototyped Tiffin Fi with Claude Code. That prototype is the root of this repo
+(`src/`, `app/`, and the deployment below). Arc requires Arc Studio as the starting point, so we rebuilt the Arc
+track version from scratch in a fresh Studio project. An earlier Studio app where we only imported and audited the
+prototype is not the submission.
+
+## Prototype, live on Arc testnet
 
 | Contract | Address |
 |---|---|

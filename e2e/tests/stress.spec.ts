@@ -18,7 +18,8 @@ async function mode(page: Page, name: 'Buy' | 'Sell' | 'Swap') {
 }
 
 async function pick(page: Page, legend: 'Pay with' | 'Receive', symbol: string) {
-  await page.getByRole('group', { name: legend }).getByText(symbol, { exact: true }).click()
+  // Each token pill is a label with an invisible radio laid over it, so check the radio itself.
+  await page.getByRole('group', { name: legend }).getByRole('radio', { name: symbol, exact: true }).check()
 }
 
 /** One swap through the app: an allow step when needed (its own click), then the swap. */
@@ -61,8 +62,10 @@ test('bad amounts never reach the wallet', async ({ page, wallet }) => {
   }
   await field.fill('0')
   await expect(page.getByText('Enter an amount above zero.')).toBeVisible()
+  // More than the 30% single-buy cap and more than the wallet holds: the form says why and won't send.
   await field.fill('100000')
-  await expect(page.getByText(/You have [\d.,]+ USDC\./).last()).toBeVisible()
+  await expect(page.locator('.field-problem')).toBeVisible()
+  await expect(action).toBeDisabled()
   expect(await sentCount(wallet)).toBe(0)
 })
 
@@ -79,7 +82,12 @@ test('a cancelled approval shows a clear message and the form recovers', async (
 test('buys BSKT with USDC, then sells it back', async ({ page }) => {
   await openTrade(page)
   await page.locator('#buy-amount').fill('0.1')
+  // Two steps, two clicks: allow USDC, then buy.
   await page.getByRole('button', { name: 'Allow 0.1 USDC' }).click()
+  await confirmed(page, 'Allow 0.1 USDC')
+  const buy = page.getByRole('button', { name: 'Buy BSKT for 0.1 USDC' })
+  await expect(buy).toBeEnabled()
+  await buy.click()
   await confirmed(page, 'Buy BSKT')
 
   await mode(page, 'Sell')
@@ -90,12 +98,16 @@ test('buys BSKT with USDC, then sells it back', async ({ page }) => {
 
 test('a double click sends one transaction, not two', async ({ page, wallet }) => {
   await openTrade(page)
-  await mode(page, 'Sell')
-  await page.locator('#sell-amount').fill('0.01')
-  const sell = page.getByRole('button', { name: 'Sell 0.01 BSKT' })
-  await sell.dblclick()
-  await confirmed(page, 'Sell BSKT')
+  await mode(page, 'Swap')
+  await pick(page, 'Pay with', 'USDC')
+  await pick(page, 'Receive', 'tAAPL')
+  await page.locator('#swap-amount').fill('0.03')
+  await page.getByRole('button', { name: 'Allow 0.03 USDC' }).dblclick()
+  await confirmed(page, 'Allow 0.03 USDC')
   expect(await sentCount(wallet)).toBe(1)
+  await page.getByRole('button', { name: 'Swap USDC for tAAPL' }).dblclick()
+  await confirmed(page, 'Swap USDC for tAAPL')
+  expect(await sentCount(wallet)).toBe(2)
 })
 
 test('swaps USDC for a stock and one stock for another', async ({ page }) => {
@@ -130,7 +142,8 @@ test('leaving a pending trade for another screen and coming back is safe', async
 test('asks to switch back when the wallet leaves Arc', async ({ page, wallet }) => {
   await openTrade(page)
   await wallet.moveTo(1)
-  await expect(page.getByRole('button', { name: 'Switch to Arc testnet' })).toBeVisible()
-  await page.getByRole('button', { name: 'Switch to Arc testnet' }).click()
+  // Both the header and the trade form offer the switch.
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Switch to Arc testnet' })).toBeVisible()
+  await page.getByLabel('Trade form').getByRole('button', { name: 'Switch to Arc testnet' }).click()
   await expect(page.getByRole('button', { name: 'Enter an amount' })).toBeVisible()
 })

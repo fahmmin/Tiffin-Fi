@@ -45,7 +45,8 @@ async function inject(page: Page, handle: (method: string, params: unknown[]) =>
 }
 
 export const test = base.extend<{ wallet: TestWallet }>({
-  wallet: async ({ page }, use) => {
+  // auto: every test's page gets the wallet, even a test that never touches the fixture itself.
+  wallet: [async ({ page }, use) => {
     const seed = process.env.E2E_SEED
     if (!seed) throw new Error('E2E_SEED is missing: run "npm run wallet" and "npm run fund" first')
     const account = mnemonicToAccount(seed)
@@ -113,7 +114,7 @@ export const test = base.extend<{ wallet: TestWallet }>({
         await page.evaluate((h) => (window as unknown as { __e2eEmit: (e: string, a: string) => void }).__e2eEmit('chainChanged', h), hex(id))
       },
     })
-  },
+  }, { auto: true }],
 })
 
 export const expect = test.expect

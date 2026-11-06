@@ -26,3 +26,4 @@ e2e/results/
 e2e/report/
 e2e/.cache-synpress/
 e2e/test-results/
+e2e/results-*/
