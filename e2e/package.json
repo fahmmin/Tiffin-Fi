@@ -1,0 +1,17 @@
+{
+  "name": "tiffin-fi-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "wallet": "node scripts/make-wallet.mjs",
+    "fund": "node --env-file=.env.e2e scripts/fund-wallet.mjs",
+    "cache": "node --env-file=.env.e2e node_modules/@synthetixio/synpress/dist/cli.js wallet-setup --force --headless",
+    "test": "node --env-file=.env.e2e node_modules/@playwright/test/cli.js test"
+  },
+  "dependencies": {
+    "@playwright/test": "1.48.2",
+    "@synthetixio/synpress": "4.1.2",
+    "typescript": "5.6.3",
+    "viem": "2.38.6"
+  }
+}

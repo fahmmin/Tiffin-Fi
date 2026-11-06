@@ -20,3 +20,9 @@ dist/
 
 # Arc Studio CLI session registry
 .arc-studio/
+
+# End-to-end test output and the Synpress MetaMask cache
+e2e/results/
+e2e/report/
+e2e/.cache-synpress/
+e2e/test-results/
