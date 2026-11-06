@@ -50,6 +50,10 @@ cp .env.example .env    # then put your key in CRE_ETH_PRIVATE_KEY
 cre workflow simulate market-clock --non-interactive --trigger-index 0 --target staging-settings --broadcast
 ```
 
+A broadcast simulation on 6 Nov 2026 wrote NVDA $188.005, AAPL $343.65, MSFT $535.015 and `marketOpen=true` to
+MarketClock: [tx 0x7074…c996](https://explorer.testnet.arc.io/tx/0x70746a4373566f8a305357b89f8a1a513e252b235917725120e59a1a94aac996),
+with MarketClock's `ReportApplied` event from the simulation forwarder in the receipt.
+
 The broadcast log ends with `tx 0x...`; open it at `https://explorer.testnet.arc.io/tx/<hash>`. The forwarder catches a reverting receiver, so a mined transaction alone does not prove MarketClock took the report: look for its `ReportApplied` event, or read `marketOpen()` and `priceOf(stock)`.
 
 ## Environment

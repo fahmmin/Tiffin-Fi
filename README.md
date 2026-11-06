@@ -23,6 +23,9 @@ Transactions you can check:
 - Fund seeded with $4 each of tNVDA, tAAPL, tMSFT and Arc USDC: [join](https://explorer.testnet.arc.io/tx/0x59a7f92deb9c90f8cdc1767eace54abb7ea2a5d315a34e51f7a0634f65f5efd5).
 - Monday replay: the reference price for Nvidia jumps 5% above the pool ([report](https://explorer.testnet.arc.io/tx/0x625616cfd66fcad90f8f2a8238ed81370ce60e1a887013d8114a919c224b7ccf)), then a bot buys the gap ([swap](https://explorer.testnet.arc.io/tx/0x1adca61ace051fba6695322d09163a21415ea5793aafd9db85de31da5d96b13d)). The bot's edge was $0.002439; the fund kept $0.001951 (80%), the bot $0.000488 (20%).
 - The way back: real prices reported again ([report](https://explorer.testnet.arc.io/tx/0x0b7f5ba673fac41c6ab1c95a8f9fb82c34200f9272bf3c98c431baf7746c2098)) and the bot sells the gap back ([swap](https://explorer.testnet.arc.io/tx/0x6e87a5d9bce72d1cc9a005bdaadd0a30b25b6ac1e4468179e52acf7e667779bd)), again keeping only 20%.
+- Chainlink CRE: a `cre workflow simulate --broadcast` run fetched live quotes, reached consensus and wrote the
+  report to MarketClock through the CRE forwarder ([tx](https://explorer.testnet.arc.io/tx/0x70746a4373566f8a305357b89f8a1a513e252b235917725120e59a1a94aac996),
+  `ReportApplied` in the receipt).
 - Ordinary swaps: [USDC to AAPL](https://explorer.testnet.arc.io/tx/0xe0fd0dc2c61e5a7f8693a38c8f4dc35b49e26ac39ea63bd9c4e77dc50e4c385a) paid the 0.30% posted fee; [AAPL to MSFT](https://explorer.testnet.arc.io/tx/0xb79be01b1f3f6cb95b64485097b0e95d2195e9d6ed7ed3fce1c779bb44bba20c) is one hop through the same reserve.
 
 The amounts are small because the Arc faucet gives 20 USDC every two hours. The maths is the same at any size:
