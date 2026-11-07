@@ -25,6 +25,13 @@ export const ROUTER: Address = '0x34666e4b2b5022071c8205474ee8e252812bfd74'
 /** Activity paging starts from the deploy block (about 71.07M), with a little slack. */
 export const DEPLOY_BLOCK = 71_060_000n
 export const LOG_CHUNK = 9_000n
+/** The block of the fund's first Joined event (the seed). History starts here. */
+export const SEED_BLOCK = 71_080_813n
+/**
+ * Endpoints for eth_getLogs only. The first RPC in RPC_URLS caps log ranges far below LOG_CHUNK on its free tier and
+ * dRPC rejects 9,000-block ranges, so logs go to endpoints that answer them.
+ */
+export const LOG_RPC_URLS = ['https://rpc.blockdaemon.testnet.arc.io', 'https://rpc.testnet.arc.io'] as const
 
 export const POLL_MS = 15_000
 export const SLIPPAGE_BPS = 50n // minimum output 0.5% below the estimate

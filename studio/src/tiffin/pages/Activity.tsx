@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { addressUrl, publicClient, txUrl } from '../chain'
+import { addressUrl, logsClient, publicClient, txUrl } from '../chain'
 import { ASSETS, DEPLOY_BLOCK, HOOK, LOG_CHUNK, assetByAddress, hookAbi } from '../config'
 import { ago, fmtDateTime, fmtShares, fmtToken, fmtUsd, shortAddr } from '../format'
 import { valueUsd } from '../math'
@@ -27,7 +27,7 @@ const EVENTS = hookAbi.filter((x) => x.type === 'event')
 const MAX_CHUNKS_PER_LOAD = 6
 const WANT_EVENTS = 12
 
-function toItem(log: Awaited<ReturnType<typeof publicClient.getLogs>>[number]): Item | null {
+function toItem(log: Awaited<ReturnType<typeof logsClient.getLogs>>[number]): Item | null {
   const l = log as unknown as { eventName: string; args: Record<string, unknown>; blockNumber: bigint; logIndex: number; transactionHash: string }
   const base = { id: `${l.transactionHash}-${l.logIndex}`, block: l.blockNumber, logIndex: l.logIndex, hash: l.transactionHash }
   if (l.eventName === 'Swap') return { ...base, raw: { kind: 'Swap', ...(l.args as Omit<Extract<Raw, { kind: 'Swap' }>, 'kind'>) } }
@@ -97,7 +97,7 @@ export function ActivityPage() {
           if (toBlock < DEPLOY_BLOCK) break
           let fromBlock = toBlock - LOG_CHUNK + 1n
           if (fromBlock < DEPLOY_BLOCK) fromBlock = DEPLOY_BLOCK
-          const logs = await publicClient.getLogs({ address: HOOK, events: EVENTS, fromBlock, toBlock })
+          const logs = await logsClient.getLogs({ address: HOOK, events: EVENTS, fromBlock, toBlock })
           fresh = fresh.concat(logs.map(toItem).filter((x): x is Item => !!x))
           chunks += 1
           toBlock = fromBlock - 1n

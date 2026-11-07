@@ -1,5 +1,5 @@
-import { publicClient } from './chain'
-import { DEPLOY_BLOCK, HOOK, LOG_CHUNK, hookAbi } from './config'
+import { logsClient, publicClient } from './chain'
+import { HOOK, LOG_CHUNK, SEED_BLOCK, hookAbi } from './config'
 
 /** One point in the fund's history, read from chain state at a past block. */
 export interface Sample {
@@ -19,22 +19,20 @@ export interface SwapRow {
 }
 
 export const SAMPLE_COUNT = 40
-const STORE_KEY = 'tiffin-history-v1'
+const STORE_KEY = 'tiffin-history-v2'
 
 interface Store {
-  seed: bigint | null
   samples: Sample[]
   loading: Promise<Sample[]> | null
 }
 
-const store: Store = { seed: null, samples: [], loading: null }
+const store: Store = { samples: [], loading: null }
 
 // Restore what an earlier visit in this tab already read.
 try {
   const raw = sessionStorage.getItem(STORE_KEY)
   if (raw) {
-    const j = JSON.parse(raw) as { seed: string; samples: Record<string, string | number>[] }
-    store.seed = BigInt(j.seed)
+    const j = JSON.parse(raw) as { samples: Record<string, string | number>[] }
     store.samples = j.samples.map((s) => ({
       block: BigInt(s.block),
       time: Number(s.time),
@@ -53,7 +51,6 @@ function persist() {
     sessionStorage.setItem(
       STORE_KEY,
       JSON.stringify({
-        seed: String(store.seed),
         samples: store.samples.map((s) => ({ ...s, block: String(s.block), nav: String(s.nav), supply: String(s.supply), fees: String(s.fees), gap: String(s.gap) })),
       }),
     )
@@ -64,28 +61,6 @@ function persist() {
 
 export function cachedSamples(): Sample[] {
   return store.samples
-}
-
-/** The first block where BSKT exists, which is the block of the first Joined event (the seed). */
-async function findSeedBlock(latest: bigint): Promise<bigint> {
-  if (store.seed !== null) return store.seed
-  const supplyAt = async (blockNumber: bigint) => {
-    try {
-      return await publicClient.readContract({ address: HOOK, abi: hookAbi, functionName: 'totalSupply', blockNumber })
-    } catch {
-      return 0n // before the hook existed
-    }
-  }
-  let lo = DEPLOY_BLOCK
-  let hi = latest
-  if ((await supplyAt(hi)) === 0n) throw new Error('No shares yet')
-  while (lo < hi) {
-    const mid = lo + (hi - lo) / 2n
-    if ((await supplyAt(mid)) > 0n) hi = mid
-    else lo = mid + 1n
-  }
-  store.seed = lo
-  return lo
 }
 
 async function sampleAt(blockNumber: bigint): Promise<Sample | null> {
@@ -117,8 +92,8 @@ export function loadSamples(latest: bigint): Promise<Sample[]> {
   if (store.samples.length >= 2) return Promise.resolve(store.samples)
   if (store.loading) return store.loading
   store.loading = (async () => {
-    const seed = await findSeedBlock(latest)
-    const span = latest - seed
+    const seed = SEED_BLOCK
+    const span = latest > seed ? latest - seed : 0n
     const heights = Array.from({ length: SAMPLE_COUNT }, (_, i) => seed + (span * BigInt(i)) / BigInt(SAMPLE_COUNT - 1))
     const unique = [...new Set(heights.map(String))].map(BigInt)
     const got = await Promise.all(unique.map((h) => sampleAt(h).catch(() => null)))
@@ -142,17 +117,18 @@ const swapStore = {
   running: null as Promise<SwapRow[]> | null,
 }
 
+const LOG_CONCURRENCY = 6
 const SWAP_EVENT = hookAbi.filter((x) => x.type === 'event' && x.name === 'Swap')
 
 export function cachedSwaps(): SwapRow[] {
   return swapStore.rows
 }
 
-/** Reads Swap events from the seed to `latest` in chunks of at most 9,000 blocks, four chunks at a time. */
+/** Reads Swap events from the seed to `latest` in chunks of at most 9,000 blocks, up to six requests at a time. */
 export function loadSwaps(latest: bigint): Promise<SwapRow[]> {
   if (swapStore.running) return swapStore.running
   swapStore.running = (async () => {
-    const start = swapStore.scannedTo !== null ? swapStore.scannedTo + 1n : (store.seed ?? (await findSeedBlock(latest)))
+    const start = swapStore.scannedTo !== null ? swapStore.scannedTo + 1n : SEED_BLOCK
     if (start > latest) return swapStore.rows
     const ranges: [bigint, bigint][] = []
     for (let from = start; from <= latest; from += LOG_CHUNK) {
@@ -160,17 +136,19 @@ export function loadSwaps(latest: bigint): Promise<SwapRow[]> {
       ranges.push([from, to])
     }
     const found: { block: bigint; assetIn: string; amountIn: bigint }[] = []
-    for (let i = 0; i < ranges.length; i += 4) {
-      const batch = await Promise.all(
-        ranges.slice(i, i + 4).map(([fromBlock, toBlock]) => publicClient.getLogs({ address: HOOK, events: SWAP_EVENT, fromBlock, toBlock })),
-      )
-      for (const logs of batch) {
+    // A small pool: as soon as one request finishes the next range starts, so six are always in flight.
+    let next = 0
+    const worker = async () => {
+      while (next < ranges.length) {
+        const [fromBlock, toBlock] = ranges[next++]
+        const logs = await logsClient.getLogs({ address: HOOK, events: SWAP_EVENT, fromBlock, toBlock })
         for (const l of logs) {
           const a = (l as unknown as { args: { assetIn: string; amountIn: bigint }; blockNumber: bigint }).args
           found.push({ block: (l as unknown as { blockNumber: bigint }).blockNumber, assetIn: a.assetIn, amountIn: a.amountIn })
         }
       }
     }
+    await Promise.all(Array.from({ length: Math.min(LOG_CONCURRENCY, ranges.length) }, worker))
     const blocks = [...new Set(found.map((f) => f.block))].filter((b) => !swapStore.stamps.has(b))
     await Promise.all(
       blocks.map((b) =>
