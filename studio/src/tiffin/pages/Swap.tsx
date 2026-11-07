@@ -4,8 +4,8 @@ import { formatUnits, type Address } from 'viem'
 import { publicClient } from '../chain'
 import { ASSETS, HOOK, ROUTER, SLIPPAGE_BPS, erc20Abi, hookAbi, routerAbi, type AssetInfo } from '../config'
 import { fmtBps, fmtToken, fmtTokenDown, fmtUsd, parseInput } from '../format'
-import { GAS_MESSAGE, LOSS_BLOCK_PCT, LOSS_WARN_PCT, overReserveCap, reserveCapMax, spendableUsdc } from '../guards'
-import { lossPct, valueUsd } from '../math'
+import { GAS_MESSAGE, overReserveCap, reserveCapMax, spendableUsdc } from '../guards'
+import { valueUsd } from '../math'
 import { parseTxError, useTx } from '../tx'
 import { useAsync } from '../useAsync'
 import { useFund } from '../useFund'
@@ -107,9 +107,7 @@ export function Swap() {
 
   const inUsd = data && raw ? valueUsd(from, raw, data.refPrices) : 0n
   const outUsd = data && quote ? valueUsd(to, quote.amountOut, data.refPrices) : 0n
-  const loss = quote && inUsd > 0n && data?.fresh ? lossPct(inUsd, outUsd) : 0
-  const lossBlocked = loss > LOSS_BLOCK_PCT
-  const blocked = tooMuch || needsGas || overCap || lossBlocked
+  const blocked = tooMuch || needsGas || overCap
 
   const doSwap = async () => {
     if (!raw || !account) return
@@ -155,7 +153,6 @@ export function Swap() {
   else if (quoting && !quote) reason = 'Getting a quote…'
   else if (quoteError) reason = 'No quote available'
   else if (!quote || quote.amountOut === 0n) reason = 'Amount too small'
-  else if (lossBlocked) reason = 'Loses more than 10% at Chainlink prices'
 
   return (
     <div className="space-y-3">
@@ -223,10 +220,6 @@ export function Swap() {
         <Warn tone="red">
           That is more than 30% of the pool's {A.symbol}. Try {fmtTokenDown(capMax, A.decimals)} or less.
         </Warn>
-      )}
-      {lossBlocked && !overCap && <Warn tone="red">This trade loses more than 10% at Chainlink's prices. Try a smaller amount.</Warn>}
-      {loss > LOSS_WARN_PCT && !lossBlocked && (
-        <Warn>This trade is worth {loss.toFixed(1)}% less than it costs, at Chainlink's prices. Check the amount before you swap.</Warn>
       )}
       {quoteError && <Warn tone="red">{quoteError}</Warn>}
       {tx.error && <Warn tone="red">{tx.error}</Warn>}

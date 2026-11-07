@@ -4,7 +4,7 @@ import { publicClient } from '../chain'
 import { HOOK, SLIPPAGE_BPS, USDC_ASSET, erc20Abi, hookAbi } from '../config'
 import { fmtShares, fmtToken, fmtUsd, parseInput } from '../format'
 import { GAS_MESSAGE, spendableUsdc } from '../guards'
-import { estimateJoinSingle, lossPct } from '../math'
+import { estimateJoinSingle } from '../math'
 import { useTx } from '../tx'
 import { useAsync } from '../useAsync'
 import { useFund } from '../useFund'
@@ -57,7 +57,6 @@ export function Buy() {
   const minShares = (shares * (10_000n - SLIPPAGE_BPS)) / 10_000n
   const worth = data && data.supply > 0n ? (shares * data.nav) / data.supply : 0n
   const paidUsd = raw ? raw * 10n ** 12n : 0n
-  const loss = raw && shares > 0n ? lossPct(paidUsd, worth) : 0
 
   const approve = async () => {
     if (!raw) return
@@ -124,7 +123,6 @@ export function Buy() {
       {needsGas && <Warn tone="red">{GAS_MESSAGE}</Warn>}
       {stale && <Warn>Chainlink's prices are stale, so single-asset buys are paused until the next update.</Warn>}
       {overCap && maxIn !== null && <Warn tone="red">That is more than 30% of the fund's USDC. Try {fmtToken(maxIn, 6)} USDC or less.</Warn>}
-      {loss > 2 && !overCap && !tooMuch && <Warn>You would receive shares worth {loss.toFixed(1)}% less than you pay, at Chainlink's prices.</Warn>}
       {simError && <Warn tone="red">{simError}</Warn>}
       {tx.error && <Warn tone="red">{tx.error}</Warn>}
 

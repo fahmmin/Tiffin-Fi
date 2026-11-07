@@ -3,7 +3,7 @@ import { formatUnits } from 'viem'
 import { publicClient } from '../chain'
 import { BSKT_DECIMALS, HOOK, SLIPPAGE_BPS, USDC_ASSET, hookAbi } from '../config'
 import { fmtShares, fmtToken, fmtUsd, parseInput } from '../format'
-import { estimateExitSingle, lossPct } from '../math'
+import { estimateExitSingle } from '../math'
 import { useTx } from '../tx'
 import { useAsync } from '../useAsync'
 import { useFund } from '../useFund'
@@ -48,7 +48,6 @@ export function Sell() {
   const minOut = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n
   const sharesUsd = data && raw && data.supply > 0n ? (raw * data.nav) / data.supply : 0n
   const outUsd = out * 10n ** 12n
-  const loss = out > 0n ? lossPct(sharesUsd, outUsd) : 0
 
   const sell = async () => {
     if (!raw) return
@@ -98,7 +97,6 @@ export function Sell() {
 
       {stale && <Warn>Chainlink's prices are stale, so single-asset sales are paused until the next update.</Warn>}
       {overCap && <Warn tone="red">That is more than 30% of the fund's USDC. Sell fewer shares or swap into a stock instead.</Warn>}
-      {loss > 2 && !overCap && <Warn>You would receive {loss.toFixed(1)}% less than your shares are worth at Chainlink's prices.</Warn>}
       {simError && <Warn tone="red">{simError}</Warn>}
       {tx.error && <Warn tone="red">{tx.error}</Warn>}
 
