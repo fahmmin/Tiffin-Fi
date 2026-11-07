@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
+import { Basket, Hub, Relay } from '@lucasmarkes/hairline/react'
 import { Chip, Pill } from '../ui'
 
 type PartId = 'wall' | 'cre' | 'clock' | 'trader' | 'pools' | 'hook' | 'reserve' | 'holders' | 'arc'
@@ -15,7 +16,7 @@ const STEPS: Step[] = [
     title: 'Chainlink checks Wall Street',
     partner: 'Chainlink CRE',
     lit: ['wall', 'cre'],
-    body: 'Every five minutes a CRE workflow runs on many Chainlink nodes. Each fetches Nvidia, Apple and Microsoft; they agree on the median, work out NYSE hours and sign one report to MarketClock on Arc.',
+    body: 'A CRE workflow runs on many Chainlink nodes. Each fetches Nvidia, Apple and Microsoft; they agree on the median, work out NYSE hours and sign one report to MarketClock on Arc.',
   },
   {
     title: 'A trader swaps',
@@ -159,15 +160,24 @@ function Diagram({ step }: { step: number }) {
   )
 }
 
-function Iso() {
-  const tile = (cx: number, cy: number, key: string, strong = false) => (
-    <path key={key} d={`M${cx} ${cy - 14}l26 12-26 12-26-12z`} fill={strong ? '#1b1630' : 'none'} stroke="#8c86b8" strokeWidth="1.5" />
-  )
-  const pts: [number, number][] = [[90, 45], [60, 62], [120, 62], [90, 79], [150, 79], [30, 79], [120, 96], [60, 96], [90, 113]]
+const CARD_VARS = {
+  '--hairline-plate': '#1b1630',
+  '--hairline-hi': '#ffffff',
+  '--hairline-edge': '#b9b2db',
+  '--hairline-mid': '#4a4270',
+  '--hairline-lo': '#241d42',
+  '--hairline-stroke': '1',
+} as CSSProperties
+
+/** The figure for each step: Hub before Start, then Relay, Hub, Hub, Relay, Hub and Basket. */
+const FIGURES = [Hub, Relay, Hub, Hub, Relay, Hub, Basket]
+
+function StepFigure({ step, title }: { step: number; title: string | null }) {
+  const Fig = FIGURES[step]
   return (
-    <svg viewBox="0 0 180 150" className="mx-auto h-28 w-auto" aria-hidden="true">
-      {pts.map(([x, y], i) => tile(x, y, String(i), i === 3))}
-    </svg>
+    <div className="mx-auto aspect-[5/4] w-full max-w-[260px]">
+      <Fig play intensity={0.6} theme="dark" label={title ? `Animated figure for: ${title}` : 'A hub whose links light up'} />
+    </div>
   )
 }
 
@@ -205,8 +215,8 @@ export function Walkthrough() {
             </ol>
           </div>
 
-          <div className="flex flex-col rounded-3xl border border-white/10 bg-deep-2 p-6">
-            <Iso />
+          <div className="flex flex-col rounded-3xl border border-white/10 bg-deep-2 p-6" style={CARD_VARS}>
+            <StepFigure step={step} title={current ? current.title : null} />
             <div className="mt-5">
               <Chip dark>6 steps</Chip>
             </div>

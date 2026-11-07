@@ -1,10 +1,9 @@
-import { useState, type ReactNode } from 'react'
-import { ASSETS } from '../config'
+import { useState, type CSSProperties, type ReactNode } from 'react'
+import { Basket, Relay, Vault } from '@lucasmarkes/hairline/react'
 import { PoolDiagram } from '../diagrams'
 import { fmtBps, fmtSharePrice, fmtUsd } from '../format'
-import { valueUsd } from '../math'
 import { Chip, NumBadge, PENDING } from '../ui'
-import { useFund, type FundData } from '../useFund'
+import { useFund } from '../useFund'
 
 interface Part {
   n: string
@@ -35,44 +34,25 @@ const PARTS: Part[] = [
   },
 ]
 
-function ReserveArt({ data }: { data: FundData | null }) {
-  const values = data ? ASSETS.map((a) => Number(valueUsd(a.index, data.reserves[a.index], data.refPrices))) : [1, 1, 1, 1]
-  const sum = values.reduce((s, v) => s + v, 0) || 1
-  return (
-    <svg viewBox="0 0 300 150" className="w-full max-w-[320px]" role="img" aria-label="Four reserve slices in the asset colours">
-      <rect x="10" y="20" width="280" height="110" rx="16" fill="#0d0a1a" opacity="0.6" />
-      {ASSETS.map((a, i) => {
-        const widths = values.map((v) => Math.max(24, (v / sum) * 252))
-        const x = 24 + widths.slice(0, i).reduce((t, w) => t + w, 0)
-        return <rect key={a.key} x={x} y={36} width={widths[i] - 4} height={78} rx="10" fill={a.key === 'USDC' ? '#ffffff' : a.color} />
-      })}
-    </svg>
-  )
-}
+const PARTS_VARS = {
+  '--hairline-plate': '#211a47',
+  '--hairline-hi': '#ffffff',
+  '--hairline-edge': '#c9c2ec',
+  '--hairline-mid': '#5a4f8f',
+  '--hairline-lo': '#2a2160',
+  '--hairline-stroke': '1',
+} as CSSProperties
 
-function ClockArt() {
-  return (
-    <svg viewBox="0 0 300 150" className="w-full max-w-[320px]" role="img" aria-label="A clock">
-      <circle cx="150" cy="75" r="56" fill="#0d0a1a" opacity="0.6" stroke="#9583ff" strokeWidth="3" />
-      <path d="M150 38v37l26 16" stroke="#fff" strokeWidth="5" strokeLinecap="round" fill="none" />
-      {[0, 90, 180, 270].map((a) => (
-        <line key={a} x1="150" y1="25" x2="150" y2="32" stroke="#9583ff" strokeWidth="3" transform={`rotate(${a} 150 75)`} />
-      ))}
-      <circle cx="150" cy="75" r="5" fill="#6e54ff" />
-    </svg>
-  )
-}
+/** The shared reserve, the market clock and the fund token each show one line figure. */
+const PART_FIGURES = [null, Vault, Relay, Basket] as const
 
-function TokenArt() {
+function PartFigure({ index, name }: { index: number; name: string }) {
+  const Fig = PART_FIGURES[index]
+  if (!Fig) return null
   return (
-    <svg viewBox="0 0 300 150" className="w-full max-w-[320px]" role="img" aria-label="A BSKT token split into four slices">
-      <circle cx="150" cy="75" r="58" fill="#0d0a1a" opacity="0.6" />
-      <path d="M150 75V25a50 50 0 0 1 50 50z" fill="#6e54ff" />
-      <path d="M150 75h50a50 50 0 0 1-50 50z" fill="#7de3fa" />
-      <path d="M150 75v50a50 50 0 0 1-50-50z" fill="#ff8be0" />
-      <path d="M150 75H100a50 50 0 0 1 50-50z" fill="#ffffff" />
-      <circle cx="150" cy="75" r="14" fill="#1b1630" />
-    </svg>
+    <div className="mx-auto aspect-[5/4] w-full max-w-[260px]">
+      <Fig play intensity={0.6} theme="dark" label={`Animated figure for: ${name}`} />
+    </div>
   )
 }
 
@@ -133,15 +113,18 @@ export function WhyParts() {
 
           <div
             className="flex min-h-[420px] flex-col rounded-3xl p-6 sm:p-8"
-            style={{ background: 'linear-gradient(165deg, rgba(110,84,255,0.28) 0%, #1b1630 48%, #1b1630 100%)' }}
+            style={{ ...PARTS_VARS, background: 'linear-gradient(165deg, #2a2160 0%, #1b1630 60%, #1b1630 100%)' }}
             aria-live="polite"
           >
-            <div className="flex flex-1 items-center justify-center">
-              {open === 0 && <PoolDiagram dark />}
-              {open === 1 && <ReserveArt data={data} />}
-              {open === 2 && <ClockArt />}
-              {open === 3 && <TokenArt />}
-            </div>
+            {open === 0 ? (
+              <div className="flex flex-1 items-center justify-center">
+                <PoolDiagram dark />
+              </div>
+            ) : (
+              <div className="flex flex-1 items-start justify-center">
+                <PartFigure index={open} name={part.name} />
+              </div>
+            )}
             <div className="mt-6">
               <div className="label text-[13px] font-semibold text-accent-deep">{part.name}</div>
               <div className="mt-3">
