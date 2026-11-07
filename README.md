@@ -170,7 +170,8 @@ the forwarder to `onReport`. The owner can push the same report, which the Monda
   writes it.
 - Arc's public RPC (`rpc.testnet.arc.io`) rate-limits contract reads on busy shared networks, such as the venue's
   WiFi. The apps and scripts read through viem's fallback transport over Arc's dRPC and Blockdaemon endpoints, then
-  the public one.
+  the public one. The Studio app tries an Alchemy endpoint first and sends at most 10 reads per batch, because dRPC's
+  free plan rejects larger batches.
 
 ## Security notes
 

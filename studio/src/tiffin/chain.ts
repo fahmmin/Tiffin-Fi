@@ -17,7 +17,7 @@ for (const url of RPC_URLS) registerChain(CHAIN_ID, url)
 /** Tries each RPC in order; one retry per endpoint before falling to the next. */
 export const publicClient = createPublicClient({
   chain: arcTestnet,
-  transport: fallback(RPC_URLS.map((url) => http(url, { batch: true, retryCount: 1 }))),
+  transport: fallback(RPC_URLS.map((url) => http(url, { batch: { batchSize: 10 }, retryCount: 1 }))),
 })
 
 export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`

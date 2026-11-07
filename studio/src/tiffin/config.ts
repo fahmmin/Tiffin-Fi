@@ -8,6 +8,7 @@ if (!usdc) throw new Error('USDC is not registered for Arc testnet')
 
 /** Reads go through these in order; Arc's own RPC rate-limits contract reads on busy shared networks. */
 export const RPC_URLS: readonly string[] = [
+  'https://arc-testnet.g.alchemy.com/v2/30A2rMY5oLYzaSUSNlDqf8WweyIyeD9H',
   'https://rpc.drpc.testnet.arc.io',
   'https://rpc.blockdaemon.testnet.arc.io',
   arc.rpcUrls[0],
