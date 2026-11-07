@@ -86,6 +86,8 @@ const isqrt = (n) => {
   return x
 }
 const same = (a, b) => getAddress(a) === getAddress(b)
+/** Dollars from an 18-decimal amount, rounded so the output reads well on screen. */
+const usd = (x, digits = 2) => `$${Number(formatUnits(x, 18)).toFixed(digits)}`
 let failures = 0
 const check = (ok, what) => {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`)
@@ -168,18 +170,18 @@ async function rebalance() {
       const [tokenIn, tokenOut] = buying ? [s.usdc, ASSETS[i]] : [ASSETS[i], s.usdc]
       const key = await read(s.hook, hookAbi, 'poolKey', [tokenIn, tokenOut])
       const hash = await send(s.router, routerAbi, 'swapExactInput', [key, same(key.currency0, tokenIn), amountIn, 0n, OWNER])
-      console.log(`${SYMBOLS[i]} pool $${formatUnits(pool, 18)} -> Chainlink $${formatUnits(target, 18)}: ${explorerTx(hash)}`)
+      console.log(`${SYMBOLS[i]} pool ${usd(pool)} -> clock ${usd(target)}: ${explorerTx(hash)}`)
       moved = true
     }
     if (!moved) break
   }
   for (let i = 0; i < 3; i++) {
     const pool = await read(s.hook, poolAbi, 'poolPriceUsd', [ASSETS[i]])
-    console.log(`  ${SYMBOLS[i]} pool $${Number(formatUnits(pool, 18)).toFixed(2)} vs Chainlink $${Number(formatUnits(prices[i], 18)).toFixed(2)}`)
+    console.log(`  ${SYMBOLS[i]} pool ${usd(pool)} vs clock ${usd(prices[i])}`)
   }
 }
 
-/// Monday replay on Studio's contracts: Chainlink's NVDA price jumps GAP_PCT (default 5%) above the pool, a bot buys
+/// Monday replay on Studio's contracts: the clock's NVDA price jumps GAP_PCT (default 5%) above the pool, a bot buys
 /// the gap, and the hook keeps 80% of its edge. Then the clock gets its real prices back and the pools are traded back.
 /// The owner pushes both reports here; in production the Chainlink CRE workflow writes the same report.
 async function monday() {
@@ -187,10 +189,11 @@ async function monday() {
   const [prices, , open] = await read(s.clock, clockAbi, 'state')
   const report = (p) => encodeAbiParameters([{ type: 'uint256[]' }, { type: 'bool' }], [p, open])
   const pool = await read(s.hook, poolAbi, 'poolPriceUsd', [s.nvda])
-  const target = (pool * BigInt(Math.round((100 + Number(process.env.GAP_PCT ?? '5')) * 100))) / 10_000n
-  console.log(`Friday: the pool prices NVDA at $${formatUnits(pool, 18)}`)
+  const gap = Number(process.env.GAP_PCT ?? '5')
+  const target = (pool * BigInt(Math.round((100 + gap) * 100))) / 10_000n
+  console.log(`Friday: the pool prices NVDA at ${usd(pool)}`)
   const pushed = await send(s.clock, clockAbi, 'pushReport', [report([target, prices[1], prices[2]])])
-  console.log(`Monday: Chainlink says $${formatUnits(target, 18)}: ${explorerTx(pushed)}`)
+  console.log(`Replay price posted: NVDA opens ${gap}% higher, at ${usd(target)}: ${explorerTx(pushed)}`)
 
   const r = await read(s.hook, poolAbi, 'reserves')
   const amountIn = isqrt((r[3] * r[0] * target) / 10n ** 30n) - r[3]
@@ -199,9 +202,9 @@ async function monday() {
   const before = await read(s.hook, poolAbi, 'gapCapturedUsd')
   const hash = await send(s.router, routerAbi, 'swapExactInput', [key, same(key.currency0, s.usdc), amountIn, 0n, OWNER])
   const kept = (await read(s.hook, poolAbi, 'gapCapturedUsd')) - before
-  console.log(`a bot buys the gap with ${formatUnits(amountIn, 6)} USDC: ${explorerTx(hash)}`)
-  console.log(`  bot's edge at Chainlink's price $${formatUnits(q.edgeUsd, 18)}`)
-  console.log(`  the fund kept $${formatUnits(kept, 18)} (${q.edgeUsd ? Number((kept * 10_000n) / q.edgeUsd) / 100 : 0}%), the bot $${formatUnits(q.edgeUsd - kept, 18)}`)
+  console.log(`a bot buys the gap with ${Number(formatUnits(amountIn, 6)).toFixed(4)} USDC: ${explorerTx(hash)}`)
+  console.log(`  the bot's edge at the clock's price: ${usd(q.edgeUsd, 6)}`)
+  console.log(`  the fund kept ${usd(kept, 6)} (${q.edgeUsd ? Number((kept * 10_000n) / q.edgeUsd) / 100 : 0}%), the bot ${usd(q.edgeUsd - kept, 6)}`)
 
   console.log(`real prices back on the clock: ${explorerTx(await send(s.clock, clockAbi, 'pushReport', [report(prices)]))}`)
   await rebalance()
