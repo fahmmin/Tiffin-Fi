@@ -144,6 +144,20 @@ Display text is tight and heavy. Body text is plain and never all caps.
   - pink for "USDC";
   - lavender for "its fees";
   - deep with white text for "Monday's gap pay the fund."
+- **Line figures:** the two cards that explain the fund (sections 2 and 3 below) each show an animated isometric line
+  figure from the npm package `@lucasmarkes/hairline`, version 0.5.1 (MIT, no dependencies; React is an optional peer).
+  - Import the components from `@lucasmarkes/hairline/react` and render them as
+    `<Figure play intensity={0.6} theme="dark" label="…" />`. `play` makes the figure walk through its own loop.
+  - A figure fills its parent's width at a 5:4 ratio. Show it at most 260px wide, centred at the top of the card.
+  - Colour it with custom properties on the card. `--hairline-plate` must be the card's colour right behind the figure,
+    because the figure's plates are filled. On the walkthrough card: plate = the card background, `--hairline-hi: #ffffff`,
+    `--hairline-edge: #b9b2db`, `--hairline-mid: #4a4270`, `--hairline-lo: #241d42`, `--hairline-stroke: 1`. On the parts
+    card: plate = the card background behind the figure, `--hairline-hi: #ffffff`, `--hairline-edge: #c9c2ec`,
+    `--hairline-mid: #5a4f8f`, `--hairline-lo: #2a2160`, `--hairline-stroke: 1`.
+  - When the card's content changes, its figure changes with it.
+  - Under `prefers-reduced-motion` the package rests the figure by itself. Add no other motion.
+  - References: `walk-step-0.jpg` to `walk-step-6.jpg` (the walkthrough card before Start and at each step) and
+    `parts-card-1.jpg` to `parts-card-4.jpg` (the parts card for each item). A screenshot is one moment of the loop.
 
 ## Landing page, top to bottom
 
@@ -163,7 +177,9 @@ Copy is final unless a number here comes from live data.
      accent-on-dark.
    - **Left, "Four parts, one fund" chip and title:** the title is "What makes the fund pay you?". Below it is an
      accordion of four items with number badges; one is open at a time.
-   - **Right, a deep-2 card for the open item:** an illustration, then the item's name, a big stat and a caption.
+   - **Right, a deep-2 card for the open item:** a figure, then the item's name, a big stat and a caption. The hook
+     shows the six-pool diagram. The other three show a line figure (see "Line figures"): The shared reserve `Vault`,
+     The market clock `Relay`, The fund token `Basket`.
 
    | Item | Body | Stat (live where possible) |
    |---|---|---|
@@ -187,6 +203,8 @@ Copy is final unless a number here comes from live data.
      Draw the six parts inside Arc in a dashed frame labelled "Arc testnet: gas in USDC, final in under a second". Label
      the arrows: quotes, signed report, price + open?, swap, beforeSwap, takes in, pays out, claim on.
    - **Right, a card titled "Follow one Monday trade":**
+     - a line figure at the top (see "Line figures") that changes with the step: `Hub` before Start, then `Relay`,
+       `Hub`, `Hub`, `Relay`, `Hub` and `Basket` for steps 1 to 6;
      - a "6 steps" chip;
      - the body "Press Start, and each step lights up the parts it uses: Chainlink CRE, Uniswap v4, Arc and the fund.";
      - Back and Start (then Next) buttons, with six progress dots.
@@ -195,7 +213,7 @@ Copy is final unless a number here comes from live data.
 
      | Step | Partner | Parts lit | Body |
      |---|---|---|---|
-     | 1. Chainlink checks Wall Street | Chainlink CRE | Wall Street, CRE | Every five minutes a CRE workflow runs on many Chainlink nodes. Each fetches Nvidia, Apple and Microsoft; they agree on the median, work out NYSE hours and sign one report to MarketClock on Arc. |
+     | 1. Chainlink checks Wall Street | Chainlink CRE | Wall Street, CRE | A CRE workflow runs on many Chainlink nodes. Each fetches Nvidia, Apple and Microsoft; they agree on the median, work out NYSE hours and sign one report to MarketClock on Arc. |
      | 2. A trader swaps | Uniswap v4 | trader, pools | A bot sends USDC to the Nvidia/USDC pool. It is one of six v4 pools, one per pair of the four assets, and all six point at the same hook. |
      | 3. The hook prices it | Uniswap v4 | hook | In beforeSwap the hook prices the trade with Balancer's weighted maths over the shared reserve. The pool still says Friday's $188 for Nvidia. |
      | 4. The hook checks the clock | Chainlink CRE | clock, hook | MarketClock says Wall Street is open and Nvidia is $197, so the bot is getting a $9-a-share bargain. 80% of that beats the 0.30% fee, so the gap fee applies. |
