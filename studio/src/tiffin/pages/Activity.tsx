@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { addressUrl, logsClient, publicClient, txUrl } from '../chain'
-import { ASSETS, DEPLOY_BLOCK, HOOK, LOG_CHUNK, assetByAddress, hookAbi } from '../config'
+import { ASSETS, DEPLOY_BLOCK, HOOK, LOG_CHUNK, POLL_MS, assetByAddress, hookAbi } from '../config'
 import { ago, fmtDateTime, fmtShares, fmtToken, fmtUsd, shortAddr } from '../format'
 import { valueUsd } from '../math'
 import { Button, Card, Dot, PENDING, Pill, useNow } from '../ui'
+import { retryQuietly } from '../retry'
 import { useFund } from '../useFund'
 import { useWallet } from '../wallet'
 
@@ -52,6 +53,8 @@ export function ActivityPage() {
   const [filter, setFilter] = useState<'all' | 'mine'>('all')
   const cursor = useRef<bigint | null>(null)
   const busy = useRef(false)
+  const retryReset = useRef(false)
+  const errorRef = useRef<string | null>(null)
   const stamps = useRef(new Map<bigint, number>())
   const senders = useRef(new Map<string, string>())
 
@@ -80,13 +83,13 @@ export function ActivityPage() {
       if (busy.current) return
       busy.current = true
       setLoading(true)
-      setError(null)
       try {
         let toBlock: bigint
+        let clearFirst = false
         if (reset || cursor.current === null) {
-          toBlock = await publicClient.getBlockNumber()
+          toBlock = await retryQuietly(() => publicClient.getBlockNumber())
           cursor.current = toBlock
-          setItems([])
+          clearFirst = true
           setDone(false)
         } else {
           toBlock = cursor.current
@@ -97,7 +100,7 @@ export function ActivityPage() {
           if (toBlock < DEPLOY_BLOCK) break
           let fromBlock = toBlock - LOG_CHUNK + 1n
           if (fromBlock < DEPLOY_BLOCK) fromBlock = DEPLOY_BLOCK
-          const logs = await logsClient.getLogs({ address: HOOK, events: EVENTS, fromBlock, toBlock })
+          const logs = await retryQuietly(() => logsClient.getLogs({ address: HOOK, events: EVENTS, fromBlock, toBlock }))
           fresh = fresh.concat(logs.map(toItem).filter((x): x is Item => !!x))
           chunks += 1
           toBlock = fromBlock - 1n
@@ -107,11 +110,15 @@ export function ActivityPage() {
         if (toBlock < DEPLOY_BLOCK) setDone(true)
         const enriched = await enrich(fresh)
         setItems((prev) => {
-          const map = new Map(prev.map((i) => [i.id, i]))
+          const map = new Map((clearFirst ? [] : prev).map((i) => [i.id, i]))
           for (const i of enriched) map.set(i.id, i)
           return [...map.values()].sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1))
         })
+        retryReset.current = false
+        setError(null)
       } catch {
+        // The rows already on screen stay. The next 15-second refresh tries again by itself.
+        retryReset.current = reset || cursor.current === null
         setError('Could not read past events from the RPC. Try again.')
       } finally {
         busy.current = false
@@ -124,6 +131,18 @@ export function ActivityPage() {
   useEffect(() => {
     const t = setTimeout(() => void load(true), 0)
     return () => clearTimeout(t)
+  }, [load])
+
+  useEffect(() => {
+    errorRef.current = error
+  }, [error])
+
+  // While a read has failed, try the same read again every 15 seconds. A success clears the error.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (errorRef.current && !busy.current && document.visibilityState === 'visible') void load(retryReset.current)
+    }, POLL_MS)
+    return () => clearInterval(id)
   }, [load])
 
   const nowSec = useNow(30_000).getTime() / 1000
@@ -184,7 +203,15 @@ export function ActivityPage() {
 
       {error && (
         <p role="alert" className="label mt-4 rounded-2xl bg-bad-soft px-4 py-3 text-[13px] font-medium text-bad">
-          {error}
+          {error}{' '}
+          <button
+            type="button"
+            onClick={() => void load(retryReset.current)}
+            disabled={loading}
+            className="font-semibold underline underline-offset-2 disabled:opacity-50"
+          >
+            Try again
+          </button>
         </p>
       )}
 

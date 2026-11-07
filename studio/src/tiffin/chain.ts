@@ -21,12 +21,19 @@ export const publicClient = createPublicClient({
 })
 
 /**
- * Logs only: endpoints that answer a 9,000-block eth_getLogs. No retries and no batching, so a bad range fails fast
- * and moves to the next endpoint instead of waiting.
+ * Logs only: endpoints that answer a 9,000-block eth_getLogs, with batching off. Blockdaemon answers them all but
+ * can drop one now and then, so it retries itself; Arc's public RPC rate-limits parallel ranges, so it is the last
+ * fallback and retries once.
  */
 export const logsClient = createPublicClient({
   chain: arcTestnet,
-  transport: fallback(LOG_RPC_URLS.map((url) => http(url, { retryCount: 0 })), { retryCount: 0 }),
+  transport: fallback(
+    [
+      http(LOG_RPC_URLS[0], { retryCount: 3, retryDelay: 400 }),
+      ...LOG_RPC_URLS.slice(1).map((url) => http(url, { retryCount: 1 })),
+    ],
+    { retryCount: 0 },
+  ),
 })
 
 export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`

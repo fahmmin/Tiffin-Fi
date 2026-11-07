@@ -1,4 +1,5 @@
 import { logsClient, publicClient } from './chain'
+import { retryQuietly } from './retry'
 import { HOOK, LOG_CHUNK, SEED_BLOCK, hookAbi } from './config'
 
 /** One point in the fund's history, read from chain state at a past block. */
@@ -141,7 +142,7 @@ export function loadSwaps(latest: bigint): Promise<SwapRow[]> {
     const worker = async () => {
       while (next < ranges.length) {
         const [fromBlock, toBlock] = ranges[next++]
-        const logs = await logsClient.getLogs({ address: HOOK, events: SWAP_EVENT, fromBlock, toBlock })
+        const logs = await retryQuietly(() => logsClient.getLogs({ address: HOOK, events: SWAP_EVENT, fromBlock, toBlock }))
         for (const l of logs) {
           const a = (l as unknown as { args: { assetIn: string; amountIn: bigint }; blockNumber: bigint }).args
           found.push({ block: (l as unknown as { blockNumber: bigint }).blockNumber, assetIn: a.assetIn, amountIn: a.amountIn })
