@@ -9,14 +9,7 @@ import { WalletButton } from './WalletButton'
 
 const ICONS = { fund: PieChart, trade: ArrowLeftRight, activity: Activity, how: Info } as const
 
-export const NOTICE = 'Arc testnet. The stock tokens are test tokens; the prices are real and the fund settles in Arc USDC.'
 export const FOOTNOTE = 'Every number comes from a contract read on Arc testnet, refreshed every 15 seconds.'
-
-export function TestnetBanner({ className = '' }: { className?: string }) {
-  return (
-    <p className={`label rounded-full border border-lav-line bg-lav px-5 py-3 text-[13px] leading-snug text-[#2c2250] sm:text-[14px] ${className}`}>{NOTICE}</p>
-  )
-}
 
 function StatusDot({ live }: { live: boolean }) {
   return <span className={`size-2 shrink-0 rounded-full ${live ? 'bg-ok' : 'bg-ink-3'}`} aria-hidden="true" />
@@ -33,7 +26,7 @@ export function Shell({ route, children }: { route: Exclude<Route, 'landing'>; c
     <div className="min-h-dvh bg-ground lg:pl-[248px]">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 hidden w-[248px] flex-col border-r border-line bg-white px-4 py-6 lg:flex">
-        <a href={href('landing')} className="rounded-xl px-2" aria-label="Tiffin Fi home">
+        <a href={href('landing')} className="rounded-xl px-2" aria-label="Dabba home">
           <Wordmark />
         </a>
         <p className="label mt-2 px-2 text-[12px] leading-snug text-ink-2">A stock basket that gets paid to rebalance</p>
@@ -73,7 +66,7 @@ export function Shell({ route, children }: { route: Exclude<Route, 'landing'>; c
       <header className="sticky top-0 z-30 border-b border-line bg-ground/90 backdrop-blur">
         <div className="mx-auto flex max-w-[1130px] flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-0 sm:py-4 lg:max-w-none lg:px-8">
           <div className="min-w-0">
-            <div className="label text-[12px] text-ink-2">Tiffin Fi</div>
+            <div className="label text-[12px] text-ink-2">Dabba</div>
             <h1 className="display text-[28px] leading-none">{title}</h1>
           </div>
           <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -89,7 +82,6 @@ export function Shell({ route, children }: { route: Exclude<Route, 'landing'>; c
 
       <main className="mx-auto max-w-[1130px] px-4 pb-28 pt-5 sm:px-0 lg:max-w-none lg:px-8 lg:pb-12">
         <div className="mx-auto max-w-[1130px] lg:mx-0">
-          <TestnetBanner className="mb-4" />
           <ReadBanner message={error} className="mb-4" />
           {w.error && (
             <p role="alert" className="label mb-4 rounded-2xl bg-bad-soft px-4 py-3 text-[13px] font-medium text-bad">

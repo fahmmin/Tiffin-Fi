@@ -1,41 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
-import { addressUrl, logsClient, publicClient, txUrl } from '../chain'
-import { ASSETS, DEPLOY_BLOCK, HOOK, LOG_CHUNK, POLL_MS, assetByAddress, hookAbi } from '../config'
+import { Loader2, RefreshCw } from 'lucide-react'
+import { loadSaved, latestBlock, mergeItems, readWindow, saveActivity, type Item } from '../activityData'
+import { addressUrl, publicClient, txUrl } from '../chain'
+import { ASSETS, DEPLOY_BLOCK, LOG_CHUNK, POLL_MS, assetByAddress } from '../config'
 import { ago, fmtDateTime, fmtShares, fmtToken, fmtUsd, shortAddr } from '../format'
 import { valueUsd } from '../math'
 import { Button, Card, Dot, PENDING, Pill, useNow } from '../ui'
-import { retryQuietly } from '../retry'
 import { useFund } from '../useFund'
 import { useWallet } from '../wallet'
 
-type Raw =
-  | { kind: 'Swap'; assetIn: string; assetOut: string; amountIn: bigint; amountOut: bigint; feeOut: bigint; protocolFee: bigint; edgeUsd: bigint; gapFee: bigint }
-  | { kind: 'Joined'; account: string; shares: bigint; amounts: readonly bigint[] }
-  | { kind: 'Exited'; account: string; shares: bigint; amounts: readonly bigint[] }
-
-interface Item {
-  id: string
-  block: bigint
-  logIndex: number
-  hash: string
-  from?: string
-  timestamp?: number
-  raw: Raw
-}
-
-const EVENTS = hookAbi.filter((x) => x.type === 'event')
 const MAX_CHUNKS_PER_LOAD = 6
 const WANT_EVENTS = 12
-
-function toItem(log: Awaited<ReturnType<typeof logsClient.getLogs>>[number]): Item | null {
-  const l = log as unknown as { eventName: string; args: Record<string, unknown>; blockNumber: bigint; logIndex: number; transactionHash: string }
-  const base = { id: `${l.transactionHash}-${l.logIndex}`, block: l.blockNumber, logIndex: l.logIndex, hash: l.transactionHash }
-  if (l.eventName === 'Swap') return { ...base, raw: { kind: 'Swap', ...(l.args as Omit<Extract<Raw, { kind: 'Swap' }>, 'kind'>) } }
-  if (l.eventName === 'Joined') return { ...base, raw: { kind: 'Joined', ...(l.args as Omit<Extract<Raw, { kind: 'Joined' }>, 'kind'>) } }
-  if (l.eventName === 'Exited') return { ...base, raw: { kind: 'Exited', ...(l.args as Omit<Extract<Raw, { kind: 'Exited' }>, 'kind'>) } }
-  return null
-}
+const READ_FAILED = 'Could not read past events from the RPC. Try again.'
 
 function amountsText(amounts: readonly bigint[]): string {
   const nz = amounts.map((a, i) => ({ a, i })).filter((x) => x.a > 0n)
@@ -46,19 +22,31 @@ function amountsText(amounts: readonly bigint[]): string {
 export function ActivityPage() {
   const { data } = useFund()
   const { account } = useWallet()
-  const [items, setItems] = useState<Item[]>([])
+  // Rows saved by an earlier visit show at once; only events newer than the newest one are fetched.
+  const [saved] = useState(loadSaved)
+  const [items, setItems] = useState<Item[]>(saved?.items ?? [])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
+  const [quiet, setQuiet] = useState(false)
+  const [done, setDone] = useState(saved?.done ?? false)
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null)
   const [filter, setFilter] = useState<'all' | 'mine'>('all')
-  const cursor = useRef<bigint | null>(null)
+  const itemsRef = useRef<Item[]>(saved?.items ?? [])
+  const cursor = useRef<bigint | null>(saved?.cursor ?? null)
+  const top = useRef<bigint | null>(saved?.top ?? null)
+  const doneRef = useRef(saved?.done ?? false)
   const busy = useRef(false)
-  const retryReset = useRef(false)
-  const errorRef = useRef<string | null>(null)
+  const errorKind = useRef<'first' | 'older' | null>(null)
   const stamps = useRef(new Map<bigint, number>())
   const senders = useRef(new Map<string, string>())
 
+  // Adds the time and sender to rows that lack them. The explorer already gives the time; the sender is one read each.
   const enrich = useCallback(async (list: Item[]): Promise<Item[]> => {
+    for (const i of itemsRef.current) {
+      if (i.timestamp) stamps.current.set(i.block, i.timestamp)
+      if (i.from) senders.current.set(i.hash, i.from)
+    }
+    for (const i of list) if (i.timestamp) stamps.current.set(i.block, i.timestamp)
     const blocks = [...new Set(list.filter((i) => !stamps.current.has(i.block)).map((i) => i.block))]
     const hashes = [...new Set(list.filter((i) => !senders.current.has(i.hash)).map((i) => i.hash))]
     await Promise.all([
@@ -75,75 +63,110 @@ export function ActivityPage() {
           .catch(() => undefined),
       ),
     ])
-    return list.map((i) => ({ ...i, timestamp: stamps.current.get(i.block), from: senders.current.get(i.hash) }))
+    return list.map((i) => ({ ...i, timestamp: stamps.current.get(i.block) ?? i.timestamp, from: senders.current.get(i.hash) ?? i.from }))
   }, [])
 
-  const load = useCallback(
-    async (reset: boolean) => {
-      if (busy.current) return
-      busy.current = true
-      setLoading(true)
-      try {
-        let toBlock: bigint
-        let clearFirst = false
-        if (reset || cursor.current === null) {
-          toBlock = await retryQuietly(() => publicClient.getBlockNumber())
-          cursor.current = toBlock
-          clearFirst = true
-          setDone(false)
-        } else {
-          toBlock = cursor.current
+  const commit = useCallback((next: Item[]) => {
+    itemsRef.current = next
+    setItems(next)
+    saveActivity({ items: next, cursor: cursor.current, done: doneRef.current, top: top.current })
+  }, [])
+
+  /** Reads blocks backwards from `start`, stopping after enough events or chunks. Moves the "older" cursor. */
+  const readBack = useCallback(async (start: bigint): Promise<Item[]> => {
+    let toBlock = start
+    let chunks = 0
+    let fresh: Item[] = []
+    while (chunks < MAX_CHUNKS_PER_LOAD && fresh.length < WANT_EVENTS) {
+      if (toBlock < DEPLOY_BLOCK) break
+      let fromBlock = toBlock - LOG_CHUNK + 1n
+      if (fromBlock < DEPLOY_BLOCK) fromBlock = DEPLOY_BLOCK
+      fresh = fresh.concat(await readWindow(fromBlock, toBlock))
+      chunks += 1
+      toBlock = fromBlock - 1n
+      if (fromBlock <= DEPLOY_BLOCK) break
+    }
+    cursor.current = toBlock
+    doneRef.current = toBlock < DEPLOY_BLOCK
+    setDone(doneRef.current)
+    return fresh
+  }, [])
+
+  /** First open with nothing saved: the latest events. With rows saved: only blocks from the newest saved row on. */
+  const loadNewer = useCallback(async () => {
+    if (busy.current) return
+    busy.current = true
+    setLoading(true)
+    try {
+      const latest = await latestBlock()
+      const have = itemsRef.current
+      const newest = have.reduce<bigint | null>((m, i) => (m === null || i.block > m ? i.block : m), null)
+      const floor = newest ?? top.current
+      let fresh: Item[] = []
+      if (floor === null) {
+        fresh = await readBack(latest)
+      } else {
+        let to = latest
+        while (to >= floor) {
+          const from = to - LOG_CHUNK + 1n > floor ? to - LOG_CHUNK + 1n : floor
+          fresh = fresh.concat(await readWindow(from, to))
+          to = from - 1n
         }
-        let chunks = 0
-        let fresh: Item[] = []
-        while (chunks < MAX_CHUNKS_PER_LOAD && fresh.length < WANT_EVENTS) {
-          if (toBlock < DEPLOY_BLOCK) break
-          let fromBlock = toBlock - LOG_CHUNK + 1n
-          if (fromBlock < DEPLOY_BLOCK) fromBlock = DEPLOY_BLOCK
-          const logs = await retryQuietly(() => logsClient.getLogs({ address: HOOK, events: EVENTS, fromBlock, toBlock }))
-          fresh = fresh.concat(logs.map(toItem).filter((x): x is Item => !!x))
-          chunks += 1
-          toBlock = fromBlock - 1n
-          cursor.current = toBlock
-          if (fromBlock <= DEPLOY_BLOCK) break
-        }
-        if (toBlock < DEPLOY_BLOCK) setDone(true)
-        const enriched = await enrich(fresh)
-        setItems((prev) => {
-          const map = new Map((clearFirst ? [] : prev).map((i) => [i.id, i]))
-          for (const i of enriched) map.set(i.id, i)
-          return [...map.values()].sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1))
-        })
-        retryReset.current = false
-        setError(null)
-      } catch {
-        // The rows already on screen stay. The next 15-second refresh tries again by itself.
-        retryReset.current = reset || cursor.current === null
-        setError('Could not read past events from the RPC. Try again.')
-      } finally {
-        busy.current = false
-        setLoading(false)
       }
-    },
-    [enrich],
-  )
+      top.current = latest
+      const missing = have.filter((i) => !i.from || !i.timestamp).slice(0, 30)
+      const enriched = await enrich([...fresh, ...missing])
+      commit(mergeItems(itemsRef.current, enriched))
+      errorKind.current = null
+      setError(null)
+      setQuiet(false)
+      setUpdatedAt(Date.now())
+    } catch {
+      // Saved rows are never replaced by an error: they stay, with a quiet note.
+      if (itemsRef.current.length > 0) setQuiet(true)
+      else {
+        errorKind.current = 'first'
+        setError(READ_FAILED)
+      }
+    } finally {
+      busy.current = false
+      setLoading(false)
+    }
+  }, [commit, enrich, readBack])
+
+  const loadOlder = useCallback(async () => {
+    if (busy.current || cursor.current === null) return
+    busy.current = true
+    setLoading(true)
+    try {
+      const fresh = await readBack(cursor.current)
+      const enriched = await enrich(fresh)
+      commit(mergeItems(itemsRef.current, enriched))
+      errorKind.current = null
+      setError(null)
+    } catch {
+      errorKind.current = 'older'
+      setError(READ_FAILED)
+    } finally {
+      busy.current = false
+      setLoading(false)
+    }
+  }, [commit, enrich, readBack])
+
+  const retry = useCallback(() => (errorKind.current === 'older' ? loadOlder() : loadNewer()), [loadNewer, loadOlder])
 
   useEffect(() => {
-    const t = setTimeout(() => void load(true), 0)
+    const t = setTimeout(() => void loadNewer(), 0)
     return () => clearTimeout(t)
-  }, [load])
+  }, [loadNewer])
 
-  useEffect(() => {
-    errorRef.current = error
-  }, [error])
-
-  // While a read has failed, try the same read again every 15 seconds. A success clears the error.
+  // Every 15 seconds: look for new events, or retry the read that failed. Errors never replace saved rows.
   useEffect(() => {
     const id = setInterval(() => {
-      if (errorRef.current && !busy.current && document.visibilityState === 'visible') void load(retryReset.current)
+      if (!busy.current && document.visibilityState === 'visible') void retry()
     }, POLL_MS)
     return () => clearInterval(id)
-  }, [load])
+  }, [retry])
 
   const nowSec = useNow(30_000).getTime() / 1000
 
@@ -206,7 +229,7 @@ export function ActivityPage() {
           {error}{' '}
           <button
             type="button"
-            onClick={() => void load(retryReset.current)}
+            onClick={() => void retry()}
             disabled={loading}
             className="font-semibold underline underline-offset-2 disabled:opacity-50"
           >
@@ -215,24 +238,41 @@ export function ActivityPage() {
         </p>
       )}
 
-      <div role="group" aria-label="Filter activity" className="mt-4 inline-flex rounded-full bg-well p-1">
-        {(['all', 'mine'] as const).map((f) => {
-          const disabled = f === 'mine' && !account
-          const active = (f === 'mine' ? showMine : !showMine) && !disabled
-          return (
-            <button
-              key={f}
-              type="button"
-              aria-pressed={active}
-              disabled={disabled}
-              title={disabled ? 'Connect a wallet to see your own activity' : undefined}
-              onClick={() => setFilter(f)}
-              className={`label min-h-10 rounded-full px-5 text-[14px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${active ? 'bg-white text-ink shadow-card' : 'text-ink-2 hover:text-ink'}`}
-            >
-              {f === 'all' ? 'All' : 'Mine'}
-            </button>
-          )
-        })}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div role="group" aria-label="Filter activity" className="inline-flex rounded-full bg-well p-1">
+          {(['all', 'mine'] as const).map((f) => {
+            const disabled = f === 'mine' && !account
+            const active = (f === 'mine' ? showMine : !showMine) && !disabled
+            return (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={active}
+                disabled={disabled}
+                title={disabled ? 'Connect a wallet to see your own activity' : undefined}
+                onClick={() => setFilter(f)}
+                className={`label min-h-10 rounded-full px-5 text-[14px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${active ? 'bg-white text-ink shadow-card' : 'text-ink-2 hover:text-ink'}`}
+              >
+                {f === 'all' ? 'All' : 'Mine'}
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="label text-[13px] text-ink-2" aria-live="polite">
+            {quiet && items.length > 0
+              ? "Couldn't refresh, showing saved activity"
+              : updatedAt !== null
+                ? nowSec - updatedAt / 1000 < 60
+                  ? 'Updated just now'
+                  : `Updated ${ago(nowSec - updatedAt / 1000)}`
+                : ''}
+          </span>
+          <Button variant="outline" onClick={() => void loadNewer()} disabled={loading}>
+            {loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <ul className="mt-3 divide-y divide-line border-t border-line">
@@ -279,7 +319,7 @@ export function ActivityPage() {
 
       <div className="mt-5">
         {!done ? (
-          <Button variant="outline" onClick={() => void load(false)} disabled={loading}>
+          <Button variant="outline" onClick={() => void loadOlder()} disabled={loading}>
             {loading && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
             {loading ? 'Reading the chain…' : 'Load older'}
           </Button>

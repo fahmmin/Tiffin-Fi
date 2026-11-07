@@ -36,5 +36,15 @@ export const logsClient = createPublicClient({
   ),
 })
 
+/** The two log endpoints on their own, so Activity can ask both at once next to the explorer API. */
+export const logsBlockdaemon = createPublicClient({
+  chain: arcTestnet,
+  transport: http(LOG_RPC_URLS[0], { retryCount: 3, retryDelay: 400 }),
+})
+export const logsPublicRpc = createPublicClient({
+  chain: arcTestnet,
+  transport: http(LOG_RPC_URLS[1], { retryCount: 1 }),
+})
+
 export const txUrl = (hash: string) => `${EXPLORER}/tx/${hash}`
 export const addressUrl = (addr: string) => `${EXPLORER}/address/${addr}`

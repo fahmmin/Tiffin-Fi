@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { TestnetBanner } from '../Shell'
 import { href } from '../route'
 import { CtaLink, ReadBanner, Wordmark } from '../ui'
 import { useFund } from '../useFund'
@@ -36,12 +35,11 @@ export function Landing() {
   return (
     <div className="bg-white">
       <div className="mx-auto max-w-[1408px] px-2 pb-2 pt-2">
-        <TestnetBanner className="text-center" />
         {error && <ReadBanner message={error} className="mt-2 text-center" />}
 
         <header className="sticky top-0 z-40 -mx-2 mt-1 bg-white/80 px-4 backdrop-blur-md">
           <div className="flex items-center justify-between gap-3 py-3">
-            <a href={href('landing')} aria-label="Tiffin Fi home" className="rounded-xl">
+            <a href={href('landing')} aria-label="Dabba home" className="rounded-xl">
               <Wordmark />
             </a>
             <nav aria-label="Sections" className="hidden items-center gap-0.5 lg:flex">
