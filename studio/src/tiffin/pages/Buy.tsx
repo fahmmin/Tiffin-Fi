@@ -3,6 +3,7 @@ import { formatUnits } from 'viem'
 import { publicClient } from '../chain'
 import { HOOK, SLIPPAGE_BPS, USDC_ASSET, erc20Abi, hookAbi } from '../config'
 import { fmtShares, fmtToken, fmtUsd, parseInput } from '../format'
+import { GAS_MESSAGE, spendableUsdc } from '../guards'
 import { estimateJoinSingle, lossPct } from '../math'
 import { useTx } from '../tx'
 import { useAsync } from '../useAsync'
@@ -38,11 +39,14 @@ export function Buy() {
   const maxIn = data ? (data.reserves[3] * 3000n) / 10_000n : null
   const tooMuch = !!raw && balance !== undefined && raw > balance
   const overCap = !!est?.overCap
+  // Arc pays gas in USDC, from the same balance.
+  const spendable = balance !== undefined ? spendableUsdc(balance) : undefined
+  const needsGas = !tooMuch && !!raw && spendable !== undefined && raw > spendable
   const needsApproval = !!account && !!raw && raw > 0n && allowance < raw
   const stale = !!data && !data.fresh
 
   // Exact simulation, only once the allowance covers the amount.
-  const canSim = !!account && !wrongChain && !!raw && raw > 0n && !needsApproval && !overCap && !tooMuch && !stale
+  const canSim = !!account && !wrongChain && !!raw && raw > 0n && !needsApproval && !overCap && !tooMuch && !needsGas && !stale
   const sim = useAsync<bigint>(canSim ? `${account}|${raw}` : null, String(data?.block ?? 0), async () =>
     (await publicClient.simulateContract({ address: HOOK, abi: hookAbi, functionName: 'joinSingle', args: [USDC_ASSET.address, raw!, 0n], account: account! })).result,
   )
@@ -76,6 +80,7 @@ export function Buy() {
   if (!raw || raw === 0n) reason = 'Enter an amount'
   else if (stale) reason = 'Prices are stale'
   else if (tooMuch) reason = 'Not enough USDC'
+  else if (needsGas) reason = 'Keep about 0.05 USDC for gas'
   else if (overCap) reason = 'Over the 30% cap'
   else if (shares === 0n) reason = 'Amount too small'
   else if (simError) reason = 'Cannot buy right now'
@@ -96,7 +101,7 @@ export function Buy() {
         right={<TokenChip symbol="USDC" color={USDC_ASSET.color} />}
         hint={maxIn !== null ? `Up to ${fmtToken(maxIn, 6)} USDC per buy right now, 30% of the fund's USDC.` : '30% of the fund\'s USDC per buy.'}
         balanceText={balance !== undefined ? `Balance ${fmtToken(balance, 6)}` : undefined}
-        onMax={balance ? () => setAmount(formatUnits(balance, 6)) : undefined}
+        onMax={spendable ? () => setAmount(formatUnits(spendable, 6)) : undefined}
       />
 
       <Rows
@@ -113,16 +118,17 @@ export function Buy() {
         </p>
       )}
 
-      {needsApproval && !tooMuch && !overCap && !stale && (
+      {needsApproval && !tooMuch && !needsGas && !overCap && !stale && (
         <Warn tone="lav">This is the estimate. Approve USDC first, then the preview switches to an exact simulation from the contract.</Warn>
       )}
+      {needsGas && <Warn tone="red">{GAS_MESSAGE}</Warn>}
       {stale && <Warn>Chainlink's prices are stale, so single-asset buys are paused until the next update.</Warn>}
       {overCap && maxIn !== null && <Warn tone="red">That is more than 30% of the fund's USDC. Try {fmtToken(maxIn, 6)} USDC or less.</Warn>}
       {loss > 2 && !overCap && !tooMuch && <Warn>You would receive shares worth {loss.toFixed(1)}% less than you pay, at Chainlink's prices.</Warn>}
       {simError && <Warn tone="red">{simError}</Warn>}
       {tx.error && <Warn tone="red">{tx.error}</Warn>}
 
-      {needsApproval && !tooMuch && !overCap && !stale ? (
+      {needsApproval && !tooMuch && !needsGas && !overCap && !stale ? (
         <ActionButton label="Approve USDC" onClick={() => void approve()} ready phase={tx.phase} />
       ) : (
         <ActionButton label="Buy the basket" onClick={() => void buy()} ready={!reason} disabledReason={reason} phase={tx.phase} />

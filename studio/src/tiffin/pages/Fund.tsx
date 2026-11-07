@@ -3,6 +3,7 @@ import { ago, fmtBps, fmtPct, fmtSharePrice, fmtShares, fmtToken, fmtUsd, fmtUsd
 import { valueUsd } from '../math'
 import { Card, Dot, PENDING, Pill, Stat, useNow } from '../ui'
 import { useFund } from '../useFund'
+import { FundHistory } from './FundHistory'
 
 function PriceNote({ pool, reference }: { pool: bigint; reference: bigint }) {
   if (pool === 0n || reference === 0n) return null
@@ -164,6 +165,8 @@ export function FundPage() {
           ))}
         </ul>
       </Card>
+
+      <FundHistory />
     </div>
   )
 }

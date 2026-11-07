@@ -2,16 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { addressUrl, publicClient, txUrl } from '../chain'
 import { ASSETS, DEPLOY_BLOCK, HOOK, LOG_CHUNK, assetByAddress, hookAbi } from '../config'
-import { ago, fmtShares, fmtToken, fmtUsd, shortAddr } from '../format'
+import { ago, fmtDateTime, fmtShares, fmtToken, fmtUsd, shortAddr } from '../format'
 import { valueUsd } from '../math'
-import { Button, Card, Dot, Pill, useNow } from '../ui'
+import { Button, Card, Dot, PENDING, Pill, useNow } from '../ui'
 import { useFund } from '../useFund'
 import { useWallet } from '../wallet'
 
 type Raw =
   | { kind: 'Swap'; assetIn: string; assetOut: string; amountIn: bigint; amountOut: bigint; feeOut: bigint; protocolFee: bigint; edgeUsd: bigint; gapFee: bigint }
-  | { kind: 'Joined'; shares: bigint; amounts: readonly bigint[] }
-  | { kind: 'Exited'; shares: bigint; amounts: readonly bigint[] }
+  | { kind: 'Joined'; account: string; shares: bigint; amounts: readonly bigint[] }
+  | { kind: 'Exited'; account: string; shares: bigint; amounts: readonly bigint[] }
 
 interface Item {
   id: string
@@ -49,6 +49,7 @@ export function ActivityPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'mine'>('all')
   const cursor = useRef<bigint | null>(null)
   const busy = useRef(false)
   const stamps = useRef(new Map<bigint, number>())
@@ -127,24 +128,52 @@ export function ActivityPage() {
 
   const nowSec = useNow(30_000).getTime() / 1000
 
-  function describe(i: Item): { type: string; gap: boolean; title: string; sub?: string } {
+  interface Described {
+    type: string
+    gap: boolean
+    title: string
+    /** USD value of the trade at today's Chainlink prices. */
+    worth: bigint | null
+    /** The fee line: what was paid and which fee applied. */
+    fee?: string
+  }
+
+  function describe(i: Item): Described {
     const r = i.raw
+    const refs = data?.refPrices
     if (r.kind === 'Swap') {
       const ain = assetByAddress(r.assetIn)
       const aout = assetByAddress(r.assetOut)
       const title = ain && aout ? `Swapped ${fmtToken(r.amountIn, ain.decimals)} ${ain.symbol} for ${fmtToken(r.amountOut, aout.decimals)} ${aout.symbol}` : 'Swap'
+      const worth = refs && ain ? valueUsd(ain.index, r.amountIn, refs) : null
       const gap = r.gapFee > 0n && r.protocolFee === 0n && r.feeOut === r.gapFee
       if (gap) {
         const share = data ? BigInt(data.gapShareBps) : 8000n
         const toFund = (r.edgeUsd * share) / 10_000n
-        return { type: 'Gap fee', gap: true, title, sub: `${fmtUsd(toFund)} to the fund, from the trader's ${fmtUsd(r.edgeUsd)} edge at Chainlink's prices.` }
+        return {
+          type: 'Gap fee',
+          gap: true,
+          title,
+          worth,
+          fee: `Gap fee applied: ${fmtUsd(toFund)} to the fund, ${data ? data.gapShareBps / 100 : 80}% of the trader's ${fmtUsd(r.edgeUsd)} edge at Chainlink's prices.`,
+        }
       }
-      const feeUsd = data && aout ? valueUsd(aout.index, r.feeOut, data.refPrices) : null
-      return { type: 'Swap', gap: false, title, sub: feeUsd !== null ? `Posted fee ${fmtUsd(feeUsd)}.` : undefined }
+      const feeUsd = refs && aout ? valueUsd(aout.index, r.feeOut, refs) : null
+      return { type: 'Swap', gap: false, title, worth, fee: feeUsd !== null ? `Posted fee ${fmtUsd(feeUsd)}. No gap fee.` : 'Posted fee. No gap fee.' }
     }
-    if (r.kind === 'Joined') return { type: 'Buy', gap: false, title: `Bought ${fmtShares(r.shares)} BSKT with ${amountsText(r.amounts)}` }
-    return { type: 'Sale', gap: false, title: `Sold ${fmtShares(r.shares)} BSKT for ${amountsText(r.amounts)}` }
+    const worth = refs ? r.amounts.reduce((sum, a, k) => sum + valueUsd(k, a, refs), 0n) : null
+    if (r.kind === 'Joined') return { type: 'Buy', gap: false, title: `Bought ${fmtShares(r.shares)} BSKT with ${amountsText(r.amounts)}`, worth }
+    return { type: 'Sale', gap: false, title: `Sold ${fmtShares(r.shares)} BSKT for ${amountsText(r.amounts)}`, worth }
   }
+
+  const isMine = (i: Item) => {
+    if (!account) return false
+    const me = account.toLowerCase()
+    const acct = i.raw.kind === 'Swap' ? undefined : i.raw.account
+    return i.from?.toLowerCase() === me || acct?.toLowerCase() === me
+  }
+  const showMine = filter === 'mine' && !!account
+  const shown = showMine ? items.filter(isMine) : items
 
   return (
     <Card className="mx-auto max-w-[1130px] lg:mx-0">
@@ -159,10 +188,30 @@ export function ActivityPage() {
         </p>
       )}
 
+      <div role="group" aria-label="Filter activity" className="mt-4 inline-flex rounded-full bg-well p-1">
+        {(['all', 'mine'] as const).map((f) => {
+          const disabled = f === 'mine' && !account
+          const active = (f === 'mine' ? showMine : !showMine) && !disabled
+          return (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={active}
+              disabled={disabled}
+              title={disabled ? 'Connect a wallet to see your own activity' : undefined}
+              onClick={() => setFilter(f)}
+              className={`label min-h-10 rounded-full px-5 text-[14px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${active ? 'bg-white text-ink shadow-card' : 'text-ink-2 hover:text-ink'}`}
+            >
+              {f === 'all' ? 'All' : 'Mine'}
+            </button>
+          )
+        })}
+      </div>
+
       <ul className="mt-3 divide-y divide-line border-t border-line">
-        {items.map((i) => {
+        {shown.map((i) => {
           const d = describe(i)
-          const mine = !!account && !!i.from && i.from.toLowerCase() === account.toLowerCase()
+          const mine = isMine(i)
           return (
             <li key={i.id} className="py-4">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -172,14 +221,19 @@ export function ActivityPage() {
                 <span className="label num min-w-0 break-words text-[15px] font-semibold">{d.title}</span>
                 {mine && <Pill tone="lav">You</Pill>}
               </div>
-              {d.sub && <p className="label num mt-1.5 text-[14px] text-ink-2">{d.sub}</p>}
+              <p className="label num mt-1.5 text-[14px] text-ink-2">
+                Worth {d.worth !== null ? fmtUsd(d.worth) : PENDING} at today's Chainlink prices.
+                {d.fee ? ` ${d.fee}` : ''}
+              </p>
               <div className="label mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-2">
                 {i.from && (
                   <a href={addressUrl(i.from)} target="_blank" rel="noopener noreferrer" className="num font-medium text-accent-ink underline underline-offset-2">
                     {shortAddr(i.from)}
                   </a>
                 )}
-                <span className="num">{i.timestamp ? ago(Math.max(0, nowSec - i.timestamp)) : `Block ${i.block.toLocaleString('en-US')}`}</span>
+                <span className="num">
+                  {i.timestamp ? `${fmtDateTime(i.timestamp)}, ${ago(Math.max(0, nowSec - i.timestamp))}` : `Block ${i.block.toLocaleString('en-US')}`}
+                </span>
                 <a href={txUrl(i.hash)} target="_blank" rel="noopener noreferrer" className="font-medium text-accent-ink underline underline-offset-2">
                   View transaction
                 </a>
@@ -189,9 +243,10 @@ export function ActivityPage() {
         })}
       </ul>
 
-      {!loading && items.length === 0 && !error && (
+      {!loading && shown.length === 0 && !error && (
         <p className="label mt-4 rounded-2xl bg-well px-4 py-6 text-center text-[14px] text-ink-2">
-          No activity in the blocks scanned so far.{done ? ' That is everything since the deploy.' : ' Show older activity to keep looking.'}
+          {showMine ? 'None of your activity in the blocks scanned so far.' : 'No activity in the blocks scanned so far.'}
+          {done ? ' That is everything since the deploy.' : ' Load older to keep looking.'}
         </p>
       )}
 
@@ -199,7 +254,7 @@ export function ActivityPage() {
         {!done ? (
           <Button variant="outline" onClick={() => void load(false)} disabled={loading}>
             {loading && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-            {loading ? 'Reading the chain…' : 'Show older activity'}
+            {loading ? 'Reading the chain…' : 'Load older'}
           </Button>
         ) : (
           <p className="label text-[13px] text-ink-2">You have reached the deploy block.</p>

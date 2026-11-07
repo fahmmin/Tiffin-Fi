@@ -45,6 +45,15 @@ export function fmtToken(raw: bigint, decimals: number, maxDigits = 6): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: digits })
 }
 
+/** Like fmtToken but cuts instead of rounding, for limits ("try 0.6 or less") that must never round up. */
+export function fmtTokenDown(raw: bigint, decimals: number): string {
+  const text = formatUnits(raw, decimals)
+  const [whole, frac = ''] = text.split('.')
+  const keep = whole !== '0' ? 4 : Math.min(decimals, Math.max(4, (frac.match(/^0*/)?.[0].length ?? 0) + 3))
+  const cut = frac.slice(0, keep).replace(/0+$/, '')
+  return Number(whole).toLocaleString('en-US') + (cut ? `.${cut}` : '')
+}
+
 export function fmtShares(raw: bigint): string {
   return toNumber(raw, 18).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
 }
@@ -100,3 +109,8 @@ function sanitizeDigits(value: string, decimals: number): string {
 }
 
 export const assetSymbol = (index: number) => ASSETS[index].symbol
+
+/** "Nov 6, 2:30 PM" from unix seconds, in the viewer's time zone. */
+export function fmtDateTime(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}

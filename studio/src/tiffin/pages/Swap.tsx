@@ -3,7 +3,8 @@ import { ArrowDownUp } from 'lucide-react'
 import { formatUnits, type Address } from 'viem'
 import { publicClient } from '../chain'
 import { ASSETS, HOOK, ROUTER, SLIPPAGE_BPS, erc20Abi, hookAbi, routerAbi, type AssetInfo } from '../config'
-import { fmtBps, fmtToken, fmtUsd, parseInput } from '../format'
+import { fmtBps, fmtToken, fmtTokenDown, fmtUsd, parseInput } from '../format'
+import { GAS_MESSAGE, LOSS_BLOCK_PCT, LOSS_WARN_PCT, overReserveCap, reserveCapMax, spendableUsdc } from '../guards'
 import { lossPct, valueUsd } from '../math'
 import { parseTxError, useTx } from '../tx'
 import { useAsync } from '../useAsync'
@@ -62,6 +63,12 @@ export function Swap() {
   const balance = data?.wallet?.balances[from]
   const allowance = data?.wallet?.allowanceRouter[from] ?? 0n
   const tooMuch = !!raw && balance !== undefined && raw > balance
+  // Arc pays gas in USDC, so paying with USDC keeps a little back.
+  const spendable = balance !== undefined && from === 3 ? spendableUsdc(balance) : balance
+  const needsGas = from === 3 && !tooMuch && !!raw && spendable !== undefined && raw > spendable
+  const reserveIn = data?.reserves[from]
+  const overCap = !!raw && reserveIn !== undefined && overReserveCap(raw, reserveIn)
+  const capMax = reserveIn !== undefined ? reserveCapMax(reserveIn) : 0n
   const needsApproval = !!account && !!raw && allowance < raw
 
   // hook.quote(), debounced, and re-read on every new block poll.
@@ -101,6 +108,8 @@ export function Swap() {
   const inUsd = data && raw ? valueUsd(from, raw, data.refPrices) : 0n
   const outUsd = data && quote ? valueUsd(to, quote.amountOut, data.refPrices) : 0n
   const loss = quote && inUsd > 0n && data?.fresh ? lossPct(inUsd, outUsd) : 0
+  const lossBlocked = loss > LOSS_BLOCK_PCT
+  const blocked = tooMuch || needsGas || overCap || lossBlocked
 
   const doSwap = async () => {
     if (!raw || !account) return
@@ -141,9 +150,12 @@ export function Swap() {
   let reason: string | undefined
   if (!raw || raw === 0n) reason = 'Enter an amount'
   else if (tooMuch) reason = `Not enough ${A.symbol}`
+  else if (needsGas) reason = 'Keep about 0.05 USDC for gas'
+  else if (overCap) reason = `Over the 30% cap of the pool's ${A.symbol}`
   else if (quoting && !quote) reason = 'Getting a quote…'
   else if (quoteError) reason = 'No quote available'
   else if (!quote || quote.amountOut === 0n) reason = 'Amount too small'
+  else if (lossBlocked) reason = 'Loses more than 10% at Chainlink prices'
 
   return (
     <div className="space-y-3">
@@ -158,7 +170,7 @@ export function Swap() {
         decimals={A.decimals}
         right={<TokenSelect value={from} onChange={pickFrom} exclude={to} label="Token you pay" />}
         balanceText={balance !== undefined ? `Balance ${fmtToken(balance, A.decimals)}` : undefined}
-        onMax={balance ? () => setAmount(formatUnits(balance, A.decimals)) : undefined}
+        onMax={spendable ? () => setAmount(formatUnits(spendable, A.decimals)) : undefined}
       />
       <div className="relative z-10 -my-4 flex justify-center">
         <button
@@ -206,11 +218,20 @@ export function Swap() {
         </Warn>
       )}
       {quote && !quote.fresh && <Warn>Chainlink's prices are stale, so this swap pays the highest posted fee and no gap fee.</Warn>}
-      {loss > 2 && <Warn>This trade is worth {loss.toFixed(1)}% less than it costs, at Chainlink's prices. Check the amount before you swap.</Warn>}
+      {needsGas && <Warn tone="red">{GAS_MESSAGE}</Warn>}
+      {overCap && (
+        <Warn tone="red">
+          That is more than 30% of the pool's {A.symbol}. Try {fmtTokenDown(capMax, A.decimals)} or less.
+        </Warn>
+      )}
+      {lossBlocked && !overCap && <Warn tone="red">This trade loses more than 10% at Chainlink's prices. Try a smaller amount.</Warn>}
+      {loss > LOSS_WARN_PCT && !lossBlocked && (
+        <Warn>This trade is worth {loss.toFixed(1)}% less than it costs, at Chainlink's prices. Check the amount before you swap.</Warn>
+      )}
       {quoteError && <Warn tone="red">{quoteError}</Warn>}
       {tx.error && <Warn tone="red">{tx.error}</Warn>}
 
-      {needsApproval && !tooMuch && quote ? (
+      {needsApproval && !blocked && quote ? (
         <ActionButton label={`Approve ${A.symbol}`} onClick={() => void approve()} ready phase={tx.phase} />
       ) : (
         <ActionButton label={`Swap ${A.symbol} for ${B.symbol}`} onClick={() => void doSwap()} ready={!reason} disabledReason={reason} phase={tx.phase} />
